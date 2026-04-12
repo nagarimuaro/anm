@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+.DS_Store
+.continue/
+*.log
+client_secret_*.json
+backend/google-cloud-key.json
