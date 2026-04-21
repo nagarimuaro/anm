@@ -1,18 +1,18 @@
 /**
- * Ollama LLM Service — Gemma 4B (atau model lain)
- * HTTP client ke Ollama REST API (localhost:11434)
- * Offline-first: tidak butuh internet
+ * OpenRouter LLM Service — Cloud AI via OpenRouter API
+ * HTTP client ke OpenRouter REST API (openrouter.ai)
+ * Menggunakan format OpenAI-compatible (chat/completions)
  * 
  * OPTIMASI: Streaming mode (stream: true)
- * - Response token by token via NDJSON stream
+ * - Response token by token via SSE stream
  * - Bisa mulai TTS lebih cepat saat kalimat pertama selesai
  */
-const http = require('http');
+const https = require('https');
 require('dotenv').config();
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const MODEL = process.env.OLLAMA_MODEL || 'phi3:mini';
-const TIMEOUT_MS = 30000;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const MODEL = process.env.OPENROUTER_MODEL || 'google/gemma-3-4b-it:free';
+const TIMEOUT_MS = 60000; // Cloud API bisa lebih lambat dari lokal
 
 const SYSTEM_PROMPT = `Kamu adalah SINTA, asisten pelayanan ANM (Anjungan Nagari Mandiri).
 Tugasmu membantu warga mengurus surat administrasi nagari.
@@ -38,78 +38,100 @@ KONTEKS LOKAL (Sumatera Barat):
 - Warga mungkin tidak familiar dengan teknologi
 - Gunakan bahasa yang dipakai sehari-hari di desa`;
 
-class OllamaService {
+class OpenRouterService {
   constructor() {
-    this.baseUrl = new URL(OLLAMA_URL);
     this.model = MODEL;
     this.isReady = false;
   }
 
   /**
-   * Kirim request ke Ollama API (non-streaming)
+   * Kirim request ke OpenRouter API (non-streaming)
+   * Format: OpenAI Chat Completions
    */
-  _request(endpoint, body) {
+  _request(messages, options = {}) {
     return new Promise((resolve, reject) => {
-      const data = JSON.stringify(body);
-      const url = new URL(endpoint, this.baseUrl);
+      const body = JSON.stringify({
+        model: this.model,
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.max_tokens ?? 150,
+        top_p: options.top_p ?? 0.9,
+        stream: false,
+      });
 
-      const options = {
-        hostname: url.hostname,
-        port: url.port,
-        path: url.pathname,
+      const reqOptions = {
+        hostname: 'openrouter.ai',
+        port: 443,
+        path: '/api/v1/chat/completions',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://anm.nagarimuaro.id',
+          'X-Title': 'ANM - Anjungan Nagari Mandiri',
         },
         timeout: TIMEOUT_MS,
       };
 
-      const req = http.request(options, (res) => {
+      const req = https.request(reqOptions, (res) => {
         let responseData = '';
         res.on('data', (chunk) => { responseData += chunk; });
         res.on('end', () => {
           try {
-            resolve(JSON.parse(responseData));
+            const json = JSON.parse(responseData);
+            if (json.error) {
+              reject(new Error(`OpenRouter API error: ${json.error.message || JSON.stringify(json.error)}`));
+              return;
+            }
+            const content = json.choices?.[0]?.message?.content || '';
+            resolve(content.trim());
           } catch (e) {
-            reject(new Error(`Ollama response parse error: ${responseData.substring(0, 200)}`));
+            reject(new Error(`OpenRouter response parse error: ${responseData.substring(0, 200)}`));
           }
         });
       });
 
-      req.on('error', (err) => reject(new Error(`Ollama connection error: ${err.message}`)));
+      req.on('error', (err) => reject(new Error(`OpenRouter connection error: ${err.message}`)));
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('Ollama request timeout'));
+        reject(new Error('OpenRouter request timeout'));
       });
 
-      req.write(data);
+      req.write(body);
       req.end();
     });
   }
 
   /**
-   * Kirim request ke Ollama API dengan streaming (NDJSON)
+   * Kirim request ke OpenRouter API dengan streaming (SSE)
    * Memanggil onToken callback untuk setiap token yang diterima
    * 
-   * @param {string} endpoint 
-   * @param {Object} body 
+   * @param {Array} messages - Chat messages array
+   * @param {Object} options - temperature, max_tokens, etc
    * @param {function} onToken - Callback(tokenText) untuk setiap token
    * @returns {Promise<string>} - Full response text
    */
-  _requestStreaming(endpoint, body, onToken) {
+  _requestStreaming(messages, options = {}, onToken) {
     return new Promise((resolve, reject) => {
-      const data = JSON.stringify({ ...body, stream: true });
-      const url = new URL(endpoint, this.baseUrl);
+      const body = JSON.stringify({
+        model: this.model,
+        messages,
+        temperature: options.temperature ?? 0.3,
+        max_tokens: options.max_tokens ?? 150,
+        top_p: options.top_p ?? 0.9,
+        stream: true,
+      });
 
-      const options = {
-        hostname: url.hostname,
-        port: url.port,
-        path: url.pathname,
+      const reqOptions = {
+        hostname: 'openrouter.ai',
+        port: 443,
+        path: '/api/v1/chat/completions',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://anm.nagarimuaro.id',
+          'X-Title': 'ANM - Anjungan Nagari Mandiri',
         },
         timeout: TIMEOUT_MS,
       };
@@ -117,24 +139,27 @@ class OllamaService {
       let fullResponse = '';
       let buffer = '';
 
-      const req = http.request(options, (res) => {
+      const req = https.request(reqOptions, (res) => {
         res.on('data', (chunk) => {
           buffer += chunk.toString();
           
-          // Parse NDJSON — setiap baris adalah satu JSON object
+          // Parse SSE — setiap baris dimulai dengan "data: "
           const lines = buffer.split('\n');
           buffer = lines.pop(); // Simpan baris terakhir yang mungkin belum lengkap
           
           for (const line of lines) {
-            if (!line.trim()) continue;
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            
+            const data = trimmed.slice(6); // Remove "data: " prefix
+            if (data === '[DONE]') continue;
+            
             try {
-              const json = JSON.parse(line);
-              if (json.response) {
-                fullResponse += json.response;
-                if (onToken) onToken(json.response);
-              }
-              if (json.done) {
-                // Streaming selesai
+              const json = JSON.parse(data);
+              const token = json.choices?.[0]?.delta?.content || '';
+              if (token) {
+                fullResponse += token;
+                if (onToken) onToken(token);
               }
             } catch (e) {
               // Skip malformed lines
@@ -145,47 +170,57 @@ class OllamaService {
         res.on('end', () => {
           // Parse sisa buffer
           if (buffer.trim()) {
-            try {
-              const json = JSON.parse(buffer);
-              if (json.response) {
-                fullResponse += json.response;
-                if (onToken) onToken(json.response);
-              }
-            } catch (e) { /* ignore */ }
+            const lines = buffer.split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data: ')) continue;
+              const data = trimmed.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const json = JSON.parse(data);
+                const token = json.choices?.[0]?.delta?.content || '';
+                if (token) {
+                  fullResponse += token;
+                  if (onToken) onToken(token);
+                }
+              } catch (e) { /* ignore */ }
+            }
           }
           resolve(fullResponse.trim());
         });
       });
 
-      req.on('error', (err) => reject(new Error(`Ollama connection error: ${err.message}`)));
+      req.on('error', (err) => reject(new Error(`OpenRouter connection error: ${err.message}`)));
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('Ollama request timeout'));
+        reject(new Error('OpenRouter request timeout'));
       });
 
-      req.write(data);
+      req.write(body);
       req.end();
     });
   }
 
   /**
-   * Pre-load model saat startup
+   * Pre-load model — untuk OpenRouter cukup test koneksi API
+   * (tidak perlu load model ke RAM seperti Ollama)
    */
   async preloadModel() {
     try {
-      console.log(`🧠 Ollama: Preloading model ${this.model}...`);
-      await this._request('/api/generate', {
-        model: this.model,
-        prompt: 'Halo',
-        stream: false,
-        options: { num_predict: 1 },
-      });
+      if (!OPENROUTER_API_KEY) {
+        console.warn('⚠️  OpenRouter: API key belum diset di .env (OPENROUTER_API_KEY)');
+        return;
+      }
+      console.log(`🧠 OpenRouter: Testing connection with model ${this.model}...`);
+      const result = await this._request([
+        { role: 'user', content: 'Halo' }
+      ], { max_tokens: 5 });
       this.isReady = true;
-      console.log(`✅ Ollama: Model ${this.model} loaded and ready.`);
+      console.log(`✅ OpenRouter: Model ${this.model} ready. Test response: "${result}"`);
     } catch (error) {
-      console.error(`❌ Ollama: Failed to preload model: ${error.message}`);
-      console.error('   Pastikan Ollama berjalan: ollama serve');
-      console.error(`   Pastikan model tersedia: ollama pull ${this.model}`);
+      console.error(`❌ OpenRouter: Connection test failed: ${error.message}`);
+      console.error('   Pastikan OPENROUTER_API_KEY valid di file .env');
+      console.error('   Pastikan koneksi internet tersedia');
     }
   }
 
@@ -200,35 +235,32 @@ class OllamaService {
    */
   async generateResponse(prompt, systemPrompt = SYSTEM_PROMPT, onToken = null) {
     if (!this.isReady) {
-      console.warn('Ollama: Model belum ready, mencoba tetap generate...');
+      console.warn('OpenRouter: Belum ready, mencoba tetap generate...');
     }
 
     try {
-      const body = {
-        model: this.model,
-        prompt: prompt,
-        system: systemPrompt,
-        options: {
-          temperature: 0.3,
-          num_predict: 150,
-          top_p: 0.9,
-        },
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
+      ];
+
+      const options = {
+        temperature: 0.3,
+        max_tokens: 150,
+        top_p: 0.9,
       };
 
       if (onToken) {
         // Streaming mode — token by token
-        console.log('🧠 Ollama: Generating response (streaming)...');
-        return await this._requestStreaming('/api/generate', body, onToken);
+        console.log('🧠 OpenRouter: Generating response (streaming)...');
+        return await this._requestStreaming(messages, options, onToken);
       } else {
-        // Non-streaming mode (legacy)
-        const result = await this._request('/api/generate', {
-          ...body,
-          stream: false,
-        });
-        return (result.response || '').trim();
+        // Non-streaming mode
+        console.log('🧠 OpenRouter: Generating response...');
+        return await this._request(messages, options);
       }
     } catch (error) {
-      console.error('❌ Ollama generateResponse error:', error.message);
+      console.error('❌ OpenRouter generateResponse error:', error.message);
       return 'Maaf, sistem sedang bermasalah. Silakan hubungi petugas nagari.';
     }
   }
@@ -361,16 +393,22 @@ Jika tidak bisa diekstrak, jawab: TIDAK_DAPAT_DIEKSTRAK`;
   }
 
   /**
-   * Health check
+   * Health check — test koneksi ke OpenRouter
    */
   async healthCheck() {
     try {
-      const result = await this._request('/api/tags', {});
-      return { ok: true, models: result.models || [] };
+      if (!OPENROUTER_API_KEY) {
+        return { ok: false, error: 'OPENROUTER_API_KEY belum diset' };
+      }
+      // Simple test request
+      await this._request([
+        { role: 'user', content: 'test' }
+      ], { max_tokens: 1 });
+      return { ok: true, model: this.model };
     } catch (error) {
       return { ok: false, error: error.message };
     }
   }
 }
 
-module.exports = new OllamaService();
+module.exports = new OpenRouterService();

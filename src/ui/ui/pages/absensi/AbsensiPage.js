@@ -97,19 +97,52 @@ const AbsensiPage = () => {
         await faceapi.tf.setBackend('webgl');
         await faceapi.tf.ready();
         
-        // Di production, model ada di extraResources (di luar app.asar)
-        const isPackaged = window.require && window.require('electron').ipcRenderer;
-        let MODEL_URL = './models';
-        try {
-          const remote = window.require('process');
-          if (remote && remote.resourcesPath) {
-            MODEL_URL = 'file://' + remote.resourcesPath + '/models';
+        // face-api.js bug: loadFromUri() secara internal strip prefix http://
+        // menyebabkan tfjs fallback ke file:// di Electron.
+        // Solusi: load model manual via fetch + loadFromWeightMap
+        const baseUrl = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+          ? `${window.location.origin}/models`
+          : 'file://' + (window.require('process').resourcesPath || '.') + '/models';
+
+        console.log('[Face-API] Loading models from:', baseUrl);
+
+        // Helper: fetch manifest JSON, download shard binaries, decode via tfjs
+        const loadModel = async (net, modelName) => {
+          const manifestUrl = `${baseUrl}/${modelName}-weights_manifest.json`;
+          const manifestRes = await fetch(manifestUrl);
+          const manifest = await manifestRes.json();
+          
+          // Collect all weight specs and download all shards
+          const weightSpecs = [];
+          const shardBuffers = [];
+          
+          for (const group of manifest) {
+            weightSpecs.push(...group.weights);
+            for (const shardPath of group.paths) {
+              const res = await fetch(`${baseUrl}/${shardPath}`);
+              shardBuffers.push(await res.arrayBuffer());
+            }
           }
-        } catch(e) {}
+          
+          // Combine all shard buffers into one
+          const totalBytes = shardBuffers.reduce((sum, b) => sum + b.byteLength, 0);
+          const combined = new ArrayBuffer(totalBytes);
+          const view = new Uint8Array(combined);
+          let offset = 0;
+          for (const buf of shardBuffers) {
+            view.set(new Uint8Array(buf), offset);
+            offset += buf.byteLength;
+          }
+          
+          // Use tfjs decodeWeights which handles all dtypes correctly
+          const weightMap = faceapi.tf.io.decodeWeights(combined, weightSpecs);
+          net.loadFromWeightMap(weightMap);
+        };
+
         await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+          loadModel(faceapi.nets.tinyFaceDetector, 'tiny_face_detector_model'),
+          loadModel(faceapi.nets.faceLandmark68Net, 'face_landmark_68_model'),
+          loadModel(faceapi.nets.faceRecognitionNet, 'face_recognition_model'),
         ]);
         setModelsLoaded(true);
 

@@ -3,7 +3,7 @@
  * Orkestrasi tanya-jawab per slot menggunakan Phi-3
  * Sesuai redesain.md Bagian 3.2
  */
-const ollamaService = require('../../infrastructure/llm/ollamaService');
+const ollamaService = require('../../infrastructure/llm/openrouterService');
 const ttsService = require('../../infrastructure/tts/ttsService');
 const sessionManager = require('../../app/services/sessionManager');
 const { validateSlotValue } = require('./slotDefinitions');

@@ -6,7 +6,7 @@
  * 1. Buat Electron window (kiosk mode)
  * 2. Register IPC handlers
  * 3. Start audio HTTP server (untuk serve TTS cache)
- * 4. Preload Ollama model
+ * 4. Test OpenRouter API connection
  * 5. Initialize database
  */
 const { app, BrowserWindow, ipcMain } = require('electron');
@@ -17,7 +17,7 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 // Infrastructure
 const db = require('../infrastructure/database/db');
-const ollamaService = require('../infrastructure/llm/ollamaService');
+const llmService = require('../infrastructure/llm/openrouterService');
 const ttsService = require('../infrastructure/tts/ttsService');
 
 // Controllers
@@ -25,7 +25,7 @@ const voiceController = require('./controllers/voiceController');
 const kioskController = require('./controllers/kioskController');
 const deviceController = require('./controllers/deviceController');
 const deviceService = require('../infrastructure/device/deviceService');
-const ollamaSetup = require('../infrastructure/llm/ollamaSetup');
+// OpenRouter tidak perlu setup lokal — langsung pakai API cloud
 
 let mainWindow;
 
@@ -98,19 +98,23 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1024,
     height: 768,
-    kiosk: process.env.NODE_ENV !== 'development',
-    fullscreen: process.env.NODE_ENV !== 'development',
+    kiosk: app.isPackaged,
+    fullscreen: app.isPackaged,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
     },
   });
 
-  if (process.env.NODE_ENV === 'development') {
+  const isDev = !app.isPackaged;
+  console.log(`[DEBUG] app.isPackaged: ${app.isPackaged}, isDev: ${isDev}`);
+  if (isDev) {
     const port = process.env.PORT || 3002;
+    console.log(`[DEBUG] Loading URL: http://localhost:${port}`);
     mainWindow.loadURL(`http://localhost:${port}`);
     mainWindow.webContents.openDevTools();
   } else {
+    console.log(`[DEBUG] Loading static file from dist`);
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
 
@@ -156,29 +160,11 @@ app.whenReady().then(async () => {
   kioskController.register(ipcMain);
   deviceController.register(ipcMain, window);
 
-  let ollamaStatus = { status: 'idle', percent: 0 };
-  ipcMain.handle('ollama:getStatus', () => ollamaStatus);
-
-  // Auto-Setup Ollama: Download + Install + Pull Model + Preload (non-blocking)
-  const modelName = process.env.OLLAMA_MODEL || 'gemma3:4b';
-  ollamaSetup.autoSetup(modelName, (status, percent) => {
-    ollamaStatus = { status, percent };
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('ollama:progress', ollamaStatus);
-    }
-  }).then(() => {
-    ollamaStatus = { status: 'done', percent: 100 };
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('ollama:progress', ollamaStatus);
-    }
-    // Setelah Ollama siap, preload model ke RAM
-    return ollamaService.preloadModel();
+  // OpenRouter: Test API connection (non-blocking)
+  llmService.preloadModel().then(() => {
+    console.log('✅ OpenRouter API connection verified.');
   }).catch(err => {
-    ollamaStatus = { status: 'error', error: err.message };
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('ollama:progress', ollamaStatus);
-    }
-    console.error('⚠️  Ollama setup/preload warning:', err.message);
+    console.error('⚠️  OpenRouter connection warning:', err.message);
   });
 
   // Background Heartbeat Loop: Sync kiosk health to Cloud Admin every 60 seconds

@@ -13,7 +13,7 @@
 const sttService = require('../../infrastructure/speech/sttService');
 const ttsService = require('../../infrastructure/tts/ttsService');
 const vadService = require('../../infrastructure/speech/vadService');
-const ollamaService = require('../../infrastructure/llm/ollamaService');
+const ollamaService = require('../../infrastructure/llm/openrouterService');
 const sessionManager = require('./sessionManager');
 const slotFillingEngine = require('../../modules/voice/slotFillingEngine');
 const { INTENT_TO_SURAT } = require('../../modules/voice/slotDefinitions');

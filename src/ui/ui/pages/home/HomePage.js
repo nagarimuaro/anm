@@ -7,9 +7,7 @@ const HomePage = () => {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   
-  // Ollama Setup Status
-  const [ollamaStatus, setOllamaStatus] = useState({ status: 'idle', percent: 0 });
-  const [showOllamaModal, setShowOllamaModal] = useState(false);
+  // (OpenRouter: cloud API — tidak perlu download/setup lokal)
 
   useEffect(() => {
     // Polling function to check for updates from the Main Process (where heartbeat is cached)
@@ -33,23 +31,8 @@ const HomePage = () => {
     checkUpdate();
     const interval = setInterval(checkUpdate, 15000);
 
-    // Subscribe to Ollama progress
-    let removeListener = () => {};
-    if (window.require) {
-      const electron = window.require('electron');
-      // Get initial status
-      electron.ipcRenderer.invoke('ollama:getStatus').then(res => {
-        if (res) setOllamaStatus(res);
-      });
-      // Listen for progress updates
-      const progressHandler = (event, data) => setOllamaStatus(data);
-      electron.ipcRenderer.on('ollama:progress', progressHandler);
-      removeListener = () => electron.ipcRenderer.removeListener('ollama:progress', progressHandler);
-    }
-
     return () => {
       clearInterval(interval);
-      removeListener();
     };
   }, []);
 
@@ -80,7 +63,7 @@ const HomePage = () => {
       title: 'Cetak Surat',
       desc: 'Scan barcode/resi',
       action: () => navigate('/scan-barcode'),
-      color: '#ec4899', // Pink
+      color: '#ec4899',
     },
   ];
 
@@ -197,84 +180,6 @@ const HomePage = () => {
                 {isDownloading ? 'Mengunduh File...' : 'Download & Update'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Ollama Status Icon (Kiri) */}
-      {ollamaStatus.status !== 'idle' && ollamaStatus.status !== 'done' && !showOllamaModal && (
-        <div 
-          onClick={() => setShowOllamaModal(true)}
-          style={{
-            position: 'absolute',
-            top: '30px',
-            left: '40px',
-            background: 'var(--accent-light)',
-            color: '#fff',
-            padding: '12px 24px',
-            borderRadius: '30px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            animation: 'updatePulse 2s infinite',
-            zIndex: 50,
-            border: '1px solid rgba(255,255,255,0.2)'
-          }}
-        >
-          <span className="spin" style={{ fontSize: '20px', display: 'inline-block' }}>⚙️</span>
-          <span style={{ fontWeight: '600', fontSize: '15px' }}>Menyiapkan AI ({ollamaStatus.percent}%)</span>
-        </div>
-      )}
-
-      {/* Ollama Download Progress Modal */}
-      {showOllamaModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(12px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-          animation: 'fadeSlideDown 0.3s ease'
-        }}>
-          <div className="glass-card" style={{ padding: '40px', maxWidth: '500px', width: '90%', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div className="spin" style={{ fontSize: '48px', marginBottom: '10px' }}>⚙️</div>
-            <h2 style={{ fontSize: '26px', color: 'var(--text-primary)', fontFamily: 'var(--font-heading)' }}>
-              Menyiapkan Otak AI Lokal
-            </h2>
-            <div style={{ color: 'var(--text-secondary)', lineHeight: '1.6', background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '12px', textAlign: 'left' }}>
-              <p style={{ marginBottom: '8px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {ollamaStatus.status === 'downloading_installer' ? 'Mendownload Engine AI...' : 'Mengunduh Pengetahuan AI SINTA (2.5GB)...'}
-              </p>
-              
-              {/* Progress UI */}
-              <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.1)', height: '12px', borderRadius: '6px', overflow: 'hidden' }}>
-                <div style={{ 
-                  width: `${ollamaStatus.percent}%`, 
-                  height: '100%', 
-                  background: 'var(--accent-light)', 
-                  transition: 'width 0.3s ease' 
-                }}></div>
-              </div>
-              <div style={{ textAlign: 'right', fontSize: '13px', marginTop: '8px', color: 'var(--text-secondary)' }}>
-                {ollamaStatus.percent}% Selesai
-              </div>
-
-              <p style={{ fontSize: '13px', marginTop: '16px', color: 'var(--primary)', fontStyle: 'italic' }}>
-                Proses ini akan memakan waktu tergantung kecepatan jaringan Desa. Aplikasi tetap bisa digunakan untuk layanan lain selagi mengunduh.
-              </p>
-            </div>
-
-            <button 
-              className="btn btn-outline" 
-              style={{ borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', marginTop: '8px' }}
-              onClick={() => setShowOllamaModal(false)}
-            >
-              Sembunyikan
-            </button>
           </div>
         </div>
       )}

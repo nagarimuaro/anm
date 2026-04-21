@@ -213,46 +213,36 @@ class TextToSpeechService {
   }
 
   /**
-   * Fallback TTS menggunakan OS built-in
+   * Fallback TTS menggunakan Google TTS API (karena espeak/mac-say bisa tidak ada)
    */
-  _generateFallbackTTS(text, outputPath) {
-    return new Promise((resolve, reject) => {
-      const platform = process.platform;
-
-      if (platform === 'darwin') {
-        const aiffPath = outputPath.replace('.mp3', '.aiff');
-
-        const say = spawn('say', [
-          '-v', 'Damayanti',
-          '-o', aiffPath,
-          text,
-        ]);
-
-        say.on('close', (code) => {
-          if (code !== 0) {
-            const sayDefault = spawn('say', ['-o', aiffPath, text]);
-            sayDefault.on('close', () => {
-              this._convertToMp3(aiffPath, outputPath).then(resolve).catch(reject);
-            });
-          } else {
-            this._convertToMp3(aiffPath, outputPath).then(resolve).catch(reject);
-          }
+  async _generateFallbackTTS(text, outputPath) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const googleTTS = require('google-tts-api');
+        const fs = require('fs');
+        const https = require('https');
+        
+        // Get URL from Google TTS
+        const url = googleTTS.getAudioUrl(text, {
+          lang: 'id',
+          slow: false,
+          host: 'https://translate.google.com',
         });
-
-        say.on('error', reject);
-      } else {
-        const espeak = spawn('espeak', [
-          '-v', 'id',
-          '-w', outputPath.replace('.mp3', '.wav'),
-          text,
-        ]);
-
-        espeak.on('close', () => {
-          const wavPath = outputPath.replace('.mp3', '.wav');
-          this._convertToMp3(wavPath, outputPath).then(resolve).catch(reject);
+        
+        // Download the MP3
+        const file = fs.createWriteStream(outputPath);
+        https.get(url, (response) => {
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        }).on('error', (err) => {
+          fs.unlink(outputPath, () => {});
+          reject(err);
         });
-
-        espeak.on('error', reject);
+      } catch (err) {
+        reject(err);
       }
     });
   }
