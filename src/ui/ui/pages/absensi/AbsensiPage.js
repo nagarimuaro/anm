@@ -187,12 +187,14 @@ const AbsensiPage = () => {
     eyesClosedRef.current = false;
     setMode('liveness');
 
-    if (electron && randomCh === 'blink') {
-      electron.ipcRenderer.invoke('voice:synthesize', 'Silakan kedipkan mata Anda.');
-    } else if (electron && randomCh === 'turn_left') {
-      electron.ipcRenderer.invoke('voice:synthesize', 'Tolong menoleh sedikit ke kiri.');
-    } else if (electron && randomCh === 'turn_right') {
-      electron.ipcRenderer.invoke('voice:synthesize', 'Tolong menoleh sedikit ke kanan.');
+    // Gunakan speakOnce agar suara Sinta konsisten
+    if (electron) {
+      const pesanLiveness = randomCh === 'blink'
+        ? 'Untuk keamanan, silakan kedipkan mata Anda sekarang.'
+        : randomCh === 'turn_left'
+        ? 'Untuk keamanan, tolong menoleh sedikit ke kiri.'
+        : 'Untuk keamanan, tolong menoleh sedikit ke kanan.';
+      electron.ipcRenderer.invoke('voice:speakOnce', pesanLiveness).catch(() => {});
     }
   };
 
@@ -413,29 +415,31 @@ const AbsensiPage = () => {
     
     let text = "";
     let icon = "";
-    if (challenge === 'blink') { text = 'Kedipkan Mata Anda'; icon = '👀...😌...👀'; }
-    else if (challenge === 'turn_left') { text = 'Menoleh ke Kiri'; icon = '👤 ⬅️'; }
-    else if (challenge === 'turn_right') { text = 'Menoleh ke Kanan'; icon = '➡️ 👤'; }
+    if (challenge === 'blink') { text = 'Kedipkan Mata Anda'; icon = '😌'; }
+    else if (challenge === 'turn_left') { text = 'Menoleh ke Kiri'; icon = '⬅️'; }
+    else if (challenge === 'turn_right') { text = 'Menoleh ke Kanan'; icon = '➡️'; }
 
     return (
+      // Dirender DI LUAR camera-viewport agar tidak menghalangi wajah
+      // Posisi ini dikontrol dari parent (absensi-scan-area)
       <div className="liveness-challenge-box" style={{
-        position: 'absolute', bottom: '20%', left: '50%', transform: 'translateX(-50%)',
-        background: livenessStatus === 'passed' ? 'var(--accent-success)' : 'rgba(0,0,0,0.8)',
-        color: 'white', padding: '12px 24px', borderRadius: '12px', zIndex: 10,
-        textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', minWidth: 200,
-        border: livenessStatus === 'passed' ? 'none' : '2px solid rgba(56, 189, 248, 0.5)'
+        marginTop: 12,
+        background: livenessStatus === 'passed' ? 'rgba(16,185,129,0.15)' : 'rgba(14,165,233,0.12)',
+        color: 'white', padding: '10px 24px', borderRadius: '12px',
+        textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', minWidth: 200,
+        border: livenessStatus === 'passed' ? '1.5px solid var(--accent-success)' : '1.5px solid rgba(56,189,248,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
       }}>
         {livenessStatus === 'passed' ? (
-          <div>
-            <div style={{ fontSize: 24, marginBottom: 4 }}>✅</div>
-            <div style={{ fontWeight: 600 }}>Liveness Valid</div>
-          </div>
+          <>
+            <span style={{ fontSize: 20 }}>✅</span>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>Verifikasi Berhasil</span>
+          </>
         ) : (
-          <div>
-            <div style={{ fontSize: 20, marginBottom: 6 }}>{icon}</div>
-            <div style={{ fontWeight: 600 }}>Tantangan Keamanan:</div>
-            <div style={{ fontSize: 18, color: 'var(--accent-info)', marginTop: 4 }}>{text}</div>
-          </div>
+          <>
+            <span style={{ fontSize: 20 }}>{icon}</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>Tantangan Keamanan: <span style={{ color: 'var(--accent-info)' }}>{text}</span></span>
+          </>
         )}
       </div>
     );
@@ -473,8 +477,6 @@ const AbsensiPage = () => {
                 </div>
                 <div className="face-guide-mask" />
 
-                {renderLivenessInstruction()}
-
                 {mode === 'identifying' && (
                   <div className="camera-scan-overlay">
                     <div className="scan-line" />
@@ -489,6 +491,9 @@ const AbsensiPage = () => {
                    faceDetected ? 'Wajah Terdeteksi' : 'Menunggu Wajah'}
                 </div>
               </div>
+
+              {/* Instruksi liveness di BAWAH kamera, tidak menghalangi wajah */}
+              {renderLivenessInstruction()}
 
               {mode === 'identifying' && (
                 <div style={{ marginTop: 16, width: '100%', maxWidth: 320 }}>
