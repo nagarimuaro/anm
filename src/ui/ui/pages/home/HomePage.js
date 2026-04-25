@@ -184,21 +184,6 @@ const HomePage = () => {
         </div>
       )}
 
-      {/* Hero Section */}
-      <div style={{ textAlign: 'center', animation: 'fadeSlideDown 0.8s ease' }}>
-
-        <h1 className="page-title" style={{ fontSize: '42px', marginBottom: '8px' }}>
-          Halo, Saya SINTA
-        </h1>
-        <p className="page-subtitle" style={{ fontSize: '18px', maxWidth: '600px', margin: '0 auto', lineHeight: '1.6' }}>
-          Asisten AI interaktif Anda. Saya siap membantu mengurus surat kependudukan, cek bansos, dan layanan lainnya.<br/>
-          <br/>
-          <strong style={{ color: 'var(--accent-light)', fontWeight: 600, fontSize: '16px', background: 'var(--bg-glass)', padding: '8px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
-            ☝️ Sentuh menu di bawah atau katakan "Halo Sinta"
-          </strong>
-        </p>
-      </div>
-
       {/* Services Grid — 3 columns */}
       <div style={{
         display: 'grid',
@@ -206,7 +191,7 @@ const HomePage = () => {
         gap: '20px',
         width: '100%',
         maxWidth: '1000px',
-        padding: '0 20px'
+        padding: '0 20px', marginTop: 'auto', marginBottom: '60px'
       }}>
         {menuItems.map((item, i) => (
           <div 
@@ -254,39 +239,6 @@ const HomePage = () => {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Helper Footer */}
-      <div style={{
-        marginTop: '20px',
-        padding: '12px 24px',
-        background: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: '30px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        color: 'var(--text-secondary)',
-        fontSize: '14px',
-        animation: 'fadeSlideUp 0.8s ease 0.5s both'
-      }}>
-        <div className="status-dot"></div>
-        Sistem Suara & AI Aktif
-        
-        {/* DEVELOPMENT ONLY: RESET ACTIVATION */}
-        {window.require && (
-          <button 
-            style={{ marginLeft: 16, background: '#ef4444', border: 'none', color: 'white', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
-            onClick={async () => {
-              const electron = window.require('electron');
-              await electron.ipcRenderer.invoke('device:reset');
-              if (window.testActivationStatus) window.testActivationStatus('UNACTIVATED');
-            }}
-          >
-            TEST: Reset Device
-          </button>
-        )}
-
       </div>
     </div>
   );

@@ -19,7 +19,6 @@ const MainLayout = ({ children }) => {
   return (
     <div className="app-container">
       <header className="header">
-        <div className="header-title">Anjungan Nagari Mandiri</div>
         <div className="header-clock">{clock}</div>
         <div className="header-right">
           <button
@@ -34,18 +33,11 @@ const MainLayout = ({ children }) => {
             </svg>
             <span>Absensi</span>
           </button>
-          <div className="header-status">
-            <span className="status-dot"></span>
-            Sistem Aktif
-          </div>
         </div>
       </header>
       <main className="main-content">
         {children}
       </main>
-      <footer className="footer">
-        &copy; {new Date().getFullYear()} Pemerintah Nagari — Layanan Mandiri Berbasis AI
-      </footer>
     </div>
   );
 };
