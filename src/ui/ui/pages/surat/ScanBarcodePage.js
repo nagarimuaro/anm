@@ -69,35 +69,58 @@ const ScanBarcodePage = () => {
     }
   };
 
-  const processCode = (code) => {
+  const processCode = async (code) => {
     if (isProcessing) return;
     setIsProcessing(true);
     clearTimeout(fallbackTimer.current);
     setStatusText(`Memeriksa status resi: ${code}`);
 
-    // Mock API Call Delay
-    setTimeout(() => {
-      // Mock determination: if code ends with '0' or 'X', simulate unsigned.
-      const isSigned = !code.endsWith('0') && !code.endsWith('X') && !code.endsWith('0'.toUpperCase()) && !code.endsWith('X'.toUpperCase());
-      
-      setDocumentData({
-        code: code,
-        type: 'Surat Keterangan Kependudukan',
-        name: 'Warga Nagari (Pemohon)',
-        date: new Date().toLocaleDateString('id-ID'),
-        status_signed: isSigned
-      });
-      setIsProcessing(false);
-      setStatusText('Hasil Pengecekan Dokumen');
-      
+    try {
+      let data = null;
+
       if (electron) {
-        if (isSigned) {
+        const res = await electron.ipcRenderer.invoke('kiosk:api:cekStatusSurat', code);
+        if (res && res.success && res.data) {
+          data = res.data;
+        } else {
+          throw new Error(res?.message || 'Resi tidak ditemukan di server.');
+        }
+      } else {
+        // Fallback preview tanpa Electron
+        data = {
+          tracking_code: code,
+          template_name: 'Surat Keterangan',
+          warga_nama: 'Pemohon',
+          status: code.endsWith('0') || code.endsWith('X') ? 'pending' : 'signed',
+          pdf_url: null,
+        };
+      }
+
+      setDocumentData({
+        code: data.tracking_code || code,
+        type: data.template_name || 'Surat Keterangan',
+        name: data.warga_nama || 'Pemohon',
+        date: new Date().toLocaleDateString('id-ID'),
+        status_signed: data.status === 'signed',
+        pdf_url: data.pdf_url || null,
+      });
+      setStatusText('Hasil Pengecekan Dokumen');
+
+      if (electron) {
+        if (data.status === 'signed') {
           electron.ipcRenderer.invoke('voice:synthesize', 'Surat Anda telah ditandatangani secara elektronik oleh Wali Nagari dan sah untuk dicetak. Silakan tekan tombol Cetak Dokumen di layar untuk melanjutkan.');
         } else {
-          electron.ipcRenderer.invoke('voice:synthesize', 'Maaf, surat Anda sedang dalam antrean dan belum ditandatangani oleh pemangku Nagari. Surat belum dapat dicetak saat ini, mohon cek kembali nanti.');
+          electron.ipcRenderer.invoke('voice:synthesize', 'Maaf, surat Anda sedang dalam antrean dan belum ditandatangani oleh pemangku Nagari. Mohon cek kembali nanti.');
         }
       }
-    }, 1500);
+    } catch (err) {
+      setStatusText(`Gagal: ${err.message}`);
+      if (electron) {
+        electron.ipcRenderer.invoke('voice:synthesize', 'Kode resi tidak ditemukan atau terjadi kesalahan. Silakan coba lagi.');
+      }
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleManualSubmit = (e) => {
@@ -143,7 +166,17 @@ const ScanBarcodePage = () => {
                 <button 
                   className="btn btn-primary" 
                   style={{ width: '100%', fontSize: '16px', padding: '14px' }}
-                  onClick={() => navigate('/printing', { state: { result: { kode_resi: documentData.code } } })}
+                  onClick={() => navigate('/printing', { 
+                    state: { 
+                      result: { 
+                        kode_resi: documentData.code,
+                        tracking_code: documentData.code,
+                        pdf_url: documentData.pdf_url,
+                        type: documentData.type,
+                        name: documentData.name,
+                      } 
+                    } 
+                  })}
                 >
                   🖨️ Cetak Dokumen Sekarang
                 </button>

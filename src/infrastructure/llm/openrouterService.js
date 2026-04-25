@@ -50,28 +50,73 @@ class OpenRouterService {
    */
   _request(messages, options = {}) {
     return new Promise((resolve, reject) => {
-      const body = JSON.stringify({
-        model: this.model,
-        messages,
-        temperature: options.temperature ?? 0.3,
-        max_tokens: options.max_tokens ?? 150,
-        top_p: options.top_p ?? 0.9,
-        stream: false,
-      });
+      const isGoogleKey = OPENROUTER_API_KEY.startsWith('AIza');
 
-      const reqOptions = {
-        hostname: 'openrouter.ai',
-        port: 443,
-        path: '/api/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://anm.nagarimuaro.id',
-          'X-Title': 'ANM - Anjungan Nagari Mandiri',
-        },
-        timeout: TIMEOUT_MS,
-      };
+      let reqOptions, body;
+
+      if (isGoogleKey) {
+        // Native Gemini API Format
+        const systemMsg = messages.find(m => m.role === 'system')?.content;
+        const chatMsgs = messages.filter(m => m.role !== 'system').map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        }));
+
+        const payload = {
+          contents: chatMsgs,
+          generationConfig: {
+            temperature: options.temperature ?? 0.3,
+            maxOutputTokens: options.max_tokens ?? 500,
+            topP: options.top_p ?? 0.9,
+          }
+        };
+
+        // Gemini 2.5 models punya "thinking" yang memakan output tokens.
+        // Matikan thinking agar response tidak terpotong.
+        if (this.model.includes('2.5')) {
+          payload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
+        if (systemMsg) {
+          payload.systemInstruction = { parts: [{ text: systemMsg }] };
+        }
+
+        body = JSON.stringify(payload);
+        // Pastikan nama model diambil dari .env, bukan hardcoded
+        const modelName = this.model.includes('gemini') ? this.model : 'gemini-2.5-flash';
+        reqOptions = {
+          hostname: 'generativelanguage.googleapis.com',
+          port: 443,
+          path: `/v1beta/models/${modelName}:generateContent?key=${OPENROUTER_API_KEY}`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          timeout: TIMEOUT_MS,
+        };
+      } else {
+        // OpenRouter Format
+        body = JSON.stringify({
+          model: this.model,
+          messages,
+          temperature: options.temperature ?? 0.3,
+          max_tokens: options.max_tokens ?? 150,
+          top_p: options.top_p ?? 0.9,
+          stream: false,
+        });
+
+        reqOptions = {
+          hostname: 'openrouter.ai',
+          port: 443,
+          path: '/api/v1/chat/completions',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://anm.nagarimuaro.id',
+            'X-Title': 'ANM - Anjungan Nagari Mandiri',
+          },
+          timeout: TIMEOUT_MS,
+        };
+      }
 
       const req = https.request(reqOptions, (res) => {
         let responseData = '';
@@ -79,22 +124,29 @@ class OpenRouterService {
         res.on('end', () => {
           try {
             const json = JSON.parse(responseData);
-            if (json.error) {
-              reject(new Error(`OpenRouter API error: ${json.error.message || JSON.stringify(json.error)}`));
-              return;
+            if (isGoogleKey) {
+              if (json.error) {
+                return reject(new Error(`Gemini API error: ${json.error.message}`));
+              }
+              const content = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              return resolve(content.trim());
+            } else {
+              if (json.error) {
+                return reject(new Error(`OpenRouter API error: ${json.error.message || JSON.stringify(json.error)}`));
+              }
+              const content = json.choices?.[0]?.message?.content || '';
+              return resolve(content.trim());
             }
-            const content = json.choices?.[0]?.message?.content || '';
-            resolve(content.trim());
           } catch (e) {
-            reject(new Error(`OpenRouter response parse error: ${responseData.substring(0, 200)}`));
+            reject(new Error(`API response parse error: ${responseData.substring(0, 200)}`));
           }
         });
       });
 
-      req.on('error', (err) => reject(new Error(`OpenRouter connection error: ${err.message}`)));
+      req.on('error', (err) => reject(new Error(`API connection error: ${err.message}`)));
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('OpenRouter request timeout'));
+        reject(new Error('API request timeout'));
       });
 
       req.write(body);
@@ -113,28 +165,68 @@ class OpenRouterService {
    */
   _requestStreaming(messages, options = {}, onToken) {
     return new Promise((resolve, reject) => {
-      const body = JSON.stringify({
-        model: this.model,
-        messages,
-        temperature: options.temperature ?? 0.3,
-        max_tokens: options.max_tokens ?? 150,
-        top_p: options.top_p ?? 0.9,
-        stream: true,
-      });
+      const isGoogleKey = OPENROUTER_API_KEY.startsWith('AIza');
+      let reqOptions, body;
 
-      const reqOptions = {
-        hostname: 'openrouter.ai',
-        port: 443,
-        path: '/api/v1/chat/completions',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://anm.nagarimuaro.id',
-          'X-Title': 'ANM - Anjungan Nagari Mandiri',
-        },
-        timeout: TIMEOUT_MS,
-      };
+      if (isGoogleKey) {
+        const systemMsg = messages.find(m => m.role === 'system')?.content;
+        const chatMsgs = messages.filter(m => m.role !== 'system').map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }]
+        }));
+
+        const payload = {
+          contents: chatMsgs,
+          generationConfig: {
+            temperature: options.temperature ?? 0.3,
+            maxOutputTokens: options.max_tokens ?? 500,
+            topP: options.top_p ?? 0.9,
+          }
+        };
+
+        // Gemini 2.5 models: matikan thinking agar response tidak terpotong
+        if (this.model.includes('2.5')) {
+          payload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
+
+        if (systemMsg) {
+          payload.systemInstruction = { parts: [{ text: systemMsg }] };
+        }
+
+        body = JSON.stringify(payload);
+        const modelName = this.model.includes('gemini') ? this.model : 'gemini-2.5-flash';
+        reqOptions = {
+          hostname: 'generativelanguage.googleapis.com',
+          port: 443,
+          path: `/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${OPENROUTER_API_KEY}`,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          timeout: TIMEOUT_MS,
+        };
+      } else {
+        body = JSON.stringify({
+          model: this.model,
+          messages,
+          temperature: options.temperature ?? 0.3,
+          max_tokens: options.max_tokens ?? 150,
+          top_p: options.top_p ?? 0.9,
+          stream: true,
+        });
+
+        reqOptions = {
+          hostname: 'openrouter.ai',
+          port: 443,
+          path: '/api/v1/chat/completions',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://anm.nagarimuaro.id',
+            'X-Title': 'ANM - Anjungan Nagari Mandiri',
+          },
+          timeout: TIMEOUT_MS,
+        };
+      }
 
       let fullResponse = '';
       let buffer = '';
@@ -142,21 +234,26 @@ class OpenRouterService {
       const req = https.request(reqOptions, (res) => {
         res.on('data', (chunk) => {
           buffer += chunk.toString();
-          
-          // Parse SSE — setiap baris dimulai dengan "data: "
           const lines = buffer.split('\n');
-          buffer = lines.pop(); // Simpan baris terakhir yang mungkin belum lengkap
+          buffer = lines.pop(); // keep last incomplete line
           
           for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed || !trimmed.startsWith('data: ')) continue;
             
-            const data = trimmed.slice(6); // Remove "data: " prefix
+            const data = trimmed.slice(6);
             if (data === '[DONE]') continue;
             
             try {
               const json = JSON.parse(data);
-              const token = json.choices?.[0]?.delta?.content || '';
+              let token = '';
+              
+              if (isGoogleKey) {
+                token = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              } else {
+                token = json.choices?.[0]?.delta?.content || '';
+              }
+
               if (token) {
                 fullResponse += token;
                 if (onToken) onToken(token);
@@ -168,7 +265,6 @@ class OpenRouterService {
         });
 
         res.on('end', () => {
-          // Parse sisa buffer
           if (buffer.trim()) {
             const lines = buffer.split('\n');
             for (const line of lines) {
@@ -178,7 +274,9 @@ class OpenRouterService {
               if (data === '[DONE]') continue;
               try {
                 const json = JSON.parse(data);
-                const token = json.choices?.[0]?.delta?.content || '';
+                let token = isGoogleKey 
+                  ? (json.candidates?.[0]?.content?.parts?.[0]?.text || '')
+                  : (json.choices?.[0]?.delta?.content || '');
                 if (token) {
                   fullResponse += token;
                   if (onToken) onToken(token);
@@ -190,10 +288,10 @@ class OpenRouterService {
         });
       });
 
-      req.on('error', (err) => reject(new Error(`OpenRouter connection error: ${err.message}`)));
+      req.on('error', (err) => reject(new Error(`API connection error: ${err.message}`)));
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('OpenRouter request timeout'));
+        reject(new Error('API request timeout'));
       });
 
       req.write(body);
@@ -246,7 +344,7 @@ class OpenRouterService {
 
       const options = {
         temperature: 0.3,
-        max_tokens: 150,
+        max_tokens: 1024,
         top_p: 0.9,
       };
 
@@ -300,14 +398,17 @@ DATA_LAIN: [isi jika ada, kosong jika tidak]`;
    * Parse intent response
    */
   _parseIntentResponse(raw) {
-    const intent = raw.match(/INTENT:\s*(\S+)/)?.[1] ?? 'TIDAK_DIKENAL';
-    const nik = raw.match(/DATA_NIK:\s*(\d{16})/)?.[1] ?? null;
-    const dataLain = raw.match(/DATA_LAIN:\s*(.+)/)?.[1]?.trim() || null;
+    // Bersihkan karakter markdown atau JSON (", *, `, dll)
+    const cleanRaw = raw.replace(/[`*"'{}]/g, '');
+
+    const intent = cleanRaw.match(/INTENT\s*:\s*(\S+)/i)?.[1] ?? 'TIDAK_DIKENAL';
+    const nik = cleanRaw.match(/DATA_NIK\s*:\s*(\d{16})/i)?.[1] ?? null;
+    const dataLain = cleanRaw.match(/DATA_LAIN\s*:\s*(.+)/i)?.[1]?.trim() || null;
 
     return {
-      intent: intent.replace(/[^A-Z_]/g, ''),
+      intent: intent.replace(/[^A-Z_]/gi, '').toUpperCase(),
       nik,
-      dataLain: dataLain === 'kosong' || dataLain === '' ? null : dataLain,
+      dataLain: (dataLain && !dataLain.toLowerCase().includes('kosong')) ? dataLain : null,
     };
   }
 

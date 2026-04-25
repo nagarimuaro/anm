@@ -17,8 +17,8 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 // Infrastructure
 const db = require('../infrastructure/database/db');
-const llmService = require('../infrastructure/llm/openrouterService');
-const ttsService = require('../infrastructure/tts/ttsService');
+// const llmService = require('../infrastructure/llm/openrouterService'); // DISABLED
+// const ttsService = require('../infrastructure/tts/ttsService'); // DISABLED
 
 // Controllers
 const voiceController = require('./controllers/voiceController');
@@ -29,66 +29,9 @@ const deviceService = require('../infrastructure/device/deviceService');
 
 let mainWindow;
 
-// ========================================
-// 1. Audio HTTP Server (port 3003)
-// ========================================
+// Audio server disabled (EdgeTTS not used)
 function startAudioServer() {
-  const audioApp = express();
-  const audioPort = process.env.AUDIO_SERVER_PORT || 3003;
-  const cacheDir = ttsService.getCacheDir();
-
-  // Serve audio with Range request support
-  audioApp.get('/audio/:filename', (req, res) => {
-    const filePath = path.join(cacheDir, req.params.filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).send('Audio not found');
-    }
-
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-
-    if (req.headers.range) {
-      // Handle Range request (required by browser Audio element)
-      const parts = req.headers.range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-      if (start >= fileSize) {
-        res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
-        return;
-      }
-
-      const chunkSize = end - start + 1;
-      const stream = fs.createReadStream(filePath, { start, end });
-
-      res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-        'Content-Type': 'audio/mpeg',
-      });
-      stream.pipe(res);
-    } else {
-      // Full file response
-      res.writeHead(200, {
-        'Content-Length': fileSize,
-        'Content-Type': 'audio/mpeg',
-        'Accept-Ranges': 'bytes',
-      });
-      fs.createReadStream(filePath).pipe(res);
-    }
-  });
-
-  // Health check
-  audioApp.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'ANM Audio Server' });
-  });
-
-  audioApp.listen(audioPort, () => {
-    console.log(`🔊 Audio HTTP Server running at http://localhost:${audioPort}`);
-    console.log(`   Serving: ${cacheDir}`);
-  });
+  console.log('[AudioServer] Disabled for debugging.');
 }
 
 // ========================================
@@ -112,7 +55,7 @@ function createWindow() {
     const port = process.env.PORT || 3002;
     console.log(`[DEBUG] Loading URL: http://localhost:${port}`);
     mainWindow.loadURL(`http://localhost:${port}`);
-    mainWindow.webContents.openDevTools();
+    mainWindow.webContents.openDevTools(); // TEMP: Debug audio playback
   } else {
     console.log(`[DEBUG] Loading static file from dist`);
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
@@ -160,22 +103,7 @@ app.whenReady().then(async () => {
   kioskController.register(ipcMain);
   deviceController.register(ipcMain, window);
 
-  // OpenRouter: Test API connection (non-blocking)
-  llmService.preloadModel().then(() => {
-    console.log('✅ OpenRouter API connection verified.');
-  }).catch(err => {
-    console.error('⚠️  OpenRouter connection warning:', err.message);
-  });
-
-  // Background Heartbeat Loop: Sync kiosk health to Cloud Admin every 60 seconds
-  setInterval(() => {
-    deviceService.sendHeartbeat().catch(() => {});
-  }, 60000);
-  
-  // Also send an initial heartbeat 5 seconds after startup if activated
-  setTimeout(() => {
-    deviceService.sendHeartbeat().catch(() => {});
-  }, 5000);
+  console.log('✅ ANM ready — Gemini Live mode active');
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

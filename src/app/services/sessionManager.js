@@ -44,6 +44,9 @@ function createSession() {
 
     // Hasil akhir
     result: null,
+    
+    // Template surat yang dipilih dari API
+    templateId: null,
   };
 }
 
@@ -98,6 +101,70 @@ function setPhase(phase) {
 }
 
 /**
+ * Set template + input_variables dari API (menggantikan setTemplateId)
+ * input_variables: array dari API, contoh:
+ * [{ key: 'keperluan', label: 'Keperluan', type: 'text' }, { key: 'tempat_dikebumikan', ... }]
+ */
+function setTemplate(template) {
+  if (!activeSession) {
+    activeSession = createSession();
+    _resetSessionTimeout();
+  }
+  
+  activeSession.templateId = template.id || null;
+  activeSession.templateNama = template.nama || '';
+  activeSession.persyaratan = template.persyaratan || [];
+
+  // Bangun slot definitions dinamis dari input_variables API
+  // Selalu awali dengan slot NIK
+  const nikSlot = { key: 'nik', label: 'NIK', type: 'numeric_16', required: true, inputMethod: 'keyboard' };
+  
+  const dynamicSlots = Array.isArray(template.input_variables) && template.input_variables.length > 0
+    ? template.input_variables.map(v => ({
+        key: v.key || v.name || v.field || String(v.label).toLowerCase().replace(/\s+/g, '_'),
+        label: v.label || v.name || v.key || 'Field',
+        type: v.type === 'number' ? 'numeric' : 'text',
+        required: v.required !== false,
+        inputMethod: 'voice',
+      }))
+    : [];
+    
+  if (template.requires_keperluan) {
+    dynamicSlots.push({ key: 'keperluan', label: 'Keperluan', type: 'text', required: true, inputMethod: 'voice' });
+  } else if (dynamicSlots.length === 0) {
+    // Fallback minimal jika benar-benar kosong
+    dynamicSlots.push({ key: 'keperluan', label: 'keperluan surat', type: 'text', required: true, inputMethod: 'voice' });
+  }
+  
+  // Cegah duplikat NIK jika API sudah menyertakannya
+  const hasNik = dynamicSlots.some(s => s.key === 'nik');
+  activeSession.slotDefs = hasNik ? dynamicSlots : [nikSlot, ...dynamicSlots];
+  
+  // Reset slots
+  activeSession.slots = {};
+  activeSession.slotDefs.forEach(def => { 
+    if (template.prefilledSlots && template.prefilledSlots[def.key]) {
+      activeSession.slots[def.key] = template.prefilledSlots[def.key];
+    } else {
+      activeSession.slots[def.key] = null; 
+    }
+  });
+  
+  console.log(`📋 Template set: id=${template.id}, slots=[${activeSession.slotDefs.map(s => s.key).join(', ')}]`);
+}
+
+/**
+ * Set template ID saja (backward compat)
+ */
+function setTemplateId(templateId) {
+  if (!activeSession) {
+    activeSession = createSession();
+    _resetSessionTimeout();
+  }
+  activeSession.templateId = templateId;
+}
+
+/**
  * Set intent dan inisialisasi slots
  */
 function setIntent(intent) {
@@ -138,6 +205,7 @@ function fillSlot(key, value) {
 
   if (allFilled) {
     activeSession.current_slot = null;
+    setPhase('CONFIRMATION');
     return { success: true, allFilled: true, nextSlot: null };
   }
 
@@ -335,6 +403,8 @@ module.exports = {
   startSession,
   getSession,
   setPhase,
+  setTemplate,
+  setTemplateId,
   setIntent,
   fillSlot,
   incrementRetry,

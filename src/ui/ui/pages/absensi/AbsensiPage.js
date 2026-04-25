@@ -11,15 +11,6 @@ import * as faceapi from '@vladmandic/face-api';
 
 const electron = window.require ? window.require('electron') : null;
 
-// Mock data pegawai nagari
-const PEGAWAI_DB = [
-  { id: 'PEG-001', nip: '198501152010011001', nama: 'Ir. Muhammad Fadli, M.Si', jabatan: 'Wali Nagari', pangkat: 'Pembina (IV/a)', unit: 'Kantor Wali Nagari', status: 'Aktif' },
-  { id: 'PEG-002', nip: '199003212015012001', nama: 'Dewi Sartika, S.Pd', jabatan: 'Sekretaris Nagari', pangkat: 'Penata (III/c)', unit: 'Sekretariat', status: 'Aktif' },
-  { id: 'PEG-003', nip: '199205102018011002', nama: 'Rendi Pratama, A.Md', jabatan: 'Kepala Urusan Umum', pangkat: 'Pengatur Tk. I (II/d)', unit: 'Urusan Umum', status: 'Aktif' },
-  { id: 'PEG-004', nip: '198811302012012003', nama: 'Siti Nurhaliza, S.E', jabatan: 'Kepala Urusan Keuangan', pangkat: 'Penata Muda Tk. I (III/b)', unit: 'Urusan Keuangan', status: 'Aktif' },
-  { id: 'PEG-005', nip: '199507082020012001', nama: 'Andi Saputra', jabatan: 'Staf Pelayanan', pangkat: 'Pengatur Muda (II/a)', unit: 'Pelayanan', status: 'Aktif' },
-];
-
 function getInitials(nama) {
   return nama.split(' ').filter(w => w.length > 1 && w[0] === w[0].toUpperCase()).slice(0, 2).map(w => w[0]).join('');
 }
@@ -83,7 +74,7 @@ const AbsensiPage = () => {
   const detectLoopRef = useRef(null);
   const autoResetRef = useRef(null);
   const identifyIntervalRef = useRef(null);
-  const faceMatcherRef = useRef(null);
+  const isMatchingFaceRef = useRef(false);
 
   const matchedPegawaiRef = useRef(null);
   
@@ -145,22 +136,7 @@ const AbsensiPage = () => {
           loadModel(faceapi.nets.faceRecognitionNet, 'face_recognition_model'),
         ]);
         setModelsLoaded(true);
-
-        const savedFaces = JSON.parse(localStorage.getItem('anm_face_db') || '{}');
-        const labeledDescriptors = [];
-        for (const [pegawaiId, data] of Object.entries(savedFaces)) {
-          if (data.descriptors && data.descriptors.length > 0) {
-            const descriptors = data.descriptors.map(d => new Float32Array(d));
-            labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(pegawaiId, descriptors));
-          }
-        }
-        
-        if (labeledDescriptors.length > 0) {
-          faceMatcherRef.current = new faceapi.FaceMatcher(labeledDescriptors, 0.45);
-          setDbLoaded(true);
-        } else {
-          setDbLoaded(false);
-        }
+        setDbLoaded(true); // Always true because DB is now on the backend
       } catch (err) {
         console.error('Face-API Init Error:', err);
       }
@@ -237,20 +213,39 @@ const AbsensiPage = () => {
         const finalPegawai = matchedPegawaiRef.current;
 
         setPegawai(finalPegawai);
-        setAbsensiTime(timeStr);
-        setMode('identified');
-
+        
+        // Push checkin/checkout to Backend
         if (electron && finalPegawai) {
-          electron.ipcRenderer.invoke('voice:synthesize',
-            `Selamat pagi ${finalPegawai.nama.split(',')[0]}. Absensi masuk Anda telah tercatat.`
-          );
-        }
+          const isCheckout = finalPegawai.sudah_checkin && !finalPegawai.sudah_checkout;
+          const action = isCheckout ? 'kiosk:api:hrCheckout' : 'kiosk:api:hrCheckin';
+          
+          electron.ipcRenderer.invoke(action, { pegawai_id: finalPegawai.id, confidence: 0.95 })
+            .then(res => {
+              setAbsensiTime(timeStr);
+              setMode('identified');
+              
+              const statusText = isCheckout ? 'pulang' : 'masuk';
+              electron.ipcRenderer.invoke('voice:synthesize',
+                `Selamat, ${finalPegawai.nama.split(',')[0] || 'Pegawai'}. Absensi ${statusText} Anda telah tercatat.`
+              );
 
-        // Auto reset and navigate to home
-        autoResetRef.current = setTimeout(() => {
-          handleReset();
-          navigate('/');
-        }, 4000);
+              autoResetRef.current = setTimeout(() => {
+                handleReset();
+                navigate('/');
+              }, 4000);
+            })
+            .catch(err => {
+              console.error('Absensi fail:', err);
+              // Lanjut tampilkan UI identified meskipun backend gagal
+              setAbsensiTime(timeStr);
+              setMode('identified');
+              autoResetRef.current = setTimeout(() => { handleReset(); navigate('/'); }, 4000);
+            });
+        } else {
+          setAbsensiTime(timeStr);
+          setMode('identified');
+          autoResetRef.current = setTimeout(() => { handleReset(); navigate('/'); }, 4000);
+        }
       }
       setIdentifyProgress(Math.min(progress, 100));
     }, 120);
@@ -284,17 +279,30 @@ const AbsensiPage = () => {
           });
           setFaceDetected(true);
 
-          if (mode === 'camera' && dbLoaded && faceMatcherRef.current) {
-            // Find best match
-            const bestMatch = faceMatcherRef.current.findBestMatch(detection.descriptor);
+          if (mode === 'camera' && dbLoaded && electron && !isMatchingFaceRef.current) {
+            isMatchingFaceRef.current = true;
             
-            if (bestMatch.label !== 'unknown' && bestMatch.distance < 0.45) {
-              const matchedP = PEGAWAI_DB.find(p => p.id === bestMatch.label);
-              if (matchedP) {
-                startLivenessChallenge(matchedP);
-                return; // Mode changes, loop will restart
-              }
-            }
+            // Call API via IPC Main Process
+            electron.ipcRenderer.invoke('kiosk:api:hrFaceMatch', Array.from(detection.descriptor))
+              .then(res => {
+                if (res && res.success && res.data && res.matched) {
+                   const matchedP = res.data;
+                   if (matchedP && (matchedP.id || matchedP.pegawai_id)) {
+                     // Normalize ID to id if it's pegawai_id
+                     if (!matchedP.id) matchedP.id = matchedP.pegawai_id;
+                     startLivenessChallenge(matchedP);
+                     // No need to reset isMatchingFaceRef immediately as mode changes
+                   } else {
+                     setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
+                   }
+                } else {
+                   setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
+                }
+              })
+              .catch(err => {
+                console.error("hrFaceMatch error:", err);
+                setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
+              });
           } 
           
           else if (mode === 'liveness') {
@@ -367,6 +375,7 @@ const AbsensiPage = () => {
     setFaceBox(null);
     matchedPegawaiRef.current = null;
     eyesClosedRef.current = false;
+    isMatchingFaceRef.current = false;
   }, []);
 
   useEffect(() => {

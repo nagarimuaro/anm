@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ANM Audio Test</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1a1a2e; color: #eee; }
+    button { padding: 12px 24px; margin: 8px; font-size: 16px; cursor: pointer; border: none; border-radius: 8px; }
+    .green { background: #00c853; color: #000; }
+    .blue { background: #2196f3; color: #fff; }
+    .red { background: #f44336; color: #fff; }
+    #log { background: #0d0d1a; padding: 16px; border-radius: 8px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 13px; white-space: pre-wrap; }
+    .ok { color: #00e676; }
+    .fail { color: #ff5252; }
+    .info { color: #64b5f6; }
+    h2 { color: #bb86fc; }
+    #meter { width: 300px; height: 30px; background: #333; border-radius: 4px; overflow: hidden; }
+    #meterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #00e676, #ffeb3b, #f44336); transition: width 50ms; }
+  </style>
+</head>
+<body>
+  <h1>🔊 ANM Audio Diagnostic</h1>
+  
+  <h2>1. Mic Test</h2>
+  <button class="green" onclick="testMic()">🎤 Test Microphone</button>
+  <button class="red" onclick="stopMic()">⏹ Stop Mic</button>
+  <div>RMS Level: <span id="rmsDisplay">-</span></div>
+  <div id="meter"><div id="meterBar"></div></div>
+  
+  <h2>2. Audio Output Test</h2>
+  <button class="blue" onclick="testAudioContext()">🔊 AudioContext Beep</button>
+  <button class="blue" onclick="testHtmlAudio()">🔊 HTML5 Audio WAV</button>
+  <button class="blue" onclick="testOscillator()">🔊 Oscillator 1sec</button>
+  
+  <h2>3. Mic → Speak → Hear Test</h2>
+  <button class="green" onclick="testMicRecord()">🎤 Record 3 sec</button>
+  <button class="blue" onclick="playRecording()">▶ Play Recording</button>
+  
+  <h2>Log</h2>
+  <div id="log"></div>
+
+<script>
+const logEl = document.getElementById('log');
+function log(msg, cls = 'info') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let micStream = null;
+let micCtx = null;
+let micWorklet = null;
+let recordedChunks = [];
+let mediaRecorder = null;
+
+// ═══════ 1. MIC TEST ═══════
+async function testMic() {
+  try {
+    log('Requesting mic access...');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = stream;
+    const track = stream.getAudioTracks()[0];
+    log(`✓ Mic track: ${track.label}, state: ${track.readyState}, muted: ${track.muted}`, 'ok');
+    
+    micCtx = new AudioContext();
+    log(`AudioContext state: ${micCtx.state}, sampleRate: ${micCtx.sampleRate}`, 'info');
+    if (micCtx.state === 'suspended') await micCtx.resume();
+    
+    // Try ScriptProcessor first
+    const source = micCtx.createMediaStreamSource(stream);
+    const processor = micCtx.createScriptProcessor(2048, 1, 1);
+    let count = 0;
+    
+    processor.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+      const rms = Math.sqrt(sum / data.length);
+      count++;
+      if (count % 10 === 0) {
+        document.getElementById('rmsDisplay').textContent = rms.toFixed(6);
+        document.getElementById('meterBar').style.width = Math.min(rms * 500, 100) + '%';
+        if (rms > 0.001) {
+          log(`ScriptProcessor RMS: ${rms.toFixed(6)} ✓ SOUND DETECTED`, 'ok');
+        }
+      }
+    };
+    
+    source.connect(processor);
+    const gainNode = micCtx.createGain();
+    gainNode.gain.value = 0;
+    processor.connect(gainNode);
+    gainNode.connect(micCtx.destination);
+    
+    log('ScriptProcessor connected, listening for audio...', 'info');
+    
+    // Also try AudioWorklet
+    try {
+      const workletCtx = new AudioContext();
+      // Create inline worklet
+      const workletCode = `
+        class TestProcessor extends AudioWorkletProcessor {
+          process(inputs) {
+            const ch = inputs[0]?.[0];
+            if (ch) {
+              let sum = 0;
+              for (let i = 0; i < ch.length; i++) sum += ch[i] * ch[i];
+              this.port.postMessage({ rms: Math.sqrt(sum / ch.length) });
+            }
+            return true;
+          }
+        }
+        registerProcessor('test-proc', TestProcessor);
+      `;
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      await workletCtx.audioWorklet.addModule(url);
+      const node = new AudioWorkletNode(workletCtx, 'test-proc');
+      let wCount = 0;
+      node.port.onmessage = (e) => {
+        wCount++;
+        if (wCount % 20 === 0 && e.data.rms > 0.001) {
+          log(`AudioWorklet RMS: ${e.data.rms.toFixed(6)} ✓`, 'ok');
+        }
+      };
+      const src2 = workletCtx.createMediaStreamSource(stream);
+      src2.connect(node);
+      node.connect(workletCtx.destination);
+      log('AudioWorklet connected, listening...', 'info');
+    } catch (e) {
+      log(`AudioWorklet FAILED: ${e.message}`, 'fail');
+    }
+    
+  } catch (e) {
+    log(`Mic FAILED: ${e.message}`, 'fail');
+  }
+}
+
+function stopMic() {
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (micCtx) { micCtx.close(); micCtx = null; }
+  log('Mic stopped.', 'info');
+}
+
+// ═══════ 2. AUDIO OUTPUT TEST ═══════
+async function testAudioContext() {
+  try {
+    const ctx = new AudioContext({ sampleRate: 24000 });
+    log(`AudioContext created, state: ${ctx.state}, sampleRate: ${ctx.sampleRate}`, 'info');
+    if (ctx.state === 'suspended') await ctx.resume();
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 440;
+    gain.gain.value = 0.5;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+    log('AudioContext beep: playing 440Hz for 0.5s...', 'info');
+    setTimeout(() => { ctx.close(); log('AudioContext beep done.', 'ok'); }, 600);
+  } catch (e) {
+    log(`AudioContext beep FAILED: ${e.message}`, 'fail');
+  }
+}
+
+function testHtmlAudio() {
+  try {
+    // Generate WAV in memory
+    const sampleRate = 24000;
+    const duration = 0.5;
+    const numSamples = sampleRate * duration;
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    w(8, 'WAVE');
+    w(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    w(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+    
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      const val = Math.sin(2 * Math.PI * 880 * t) * 16000;
+      view.setInt16(44 + i * 2, val, true);
+    }
+    
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.onended = () => { URL.revokeObjectURL(url); log('HTML5 Audio WAV done.', 'ok'); };
+    audio.onerror = (e) => { log(`HTML5 Audio WAV error: ${e}`, 'fail'); };
+    audio.play().then(() => log('HTML5 Audio WAV: playing 880Hz...', 'info'))
+      .catch(e => log(`HTML5 Audio play() FAILED: ${e.message}`, 'fail'));
+  } catch (e) {
+    log(`HTML5 Audio WAV FAILED: ${e.message}`, 'fail');
+  }
+}
+
+function testOscillator() {
+  try {
+    const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume();
+    const osc = ctx.createOscillator();
+    osc.frequency.value = 660;
+    osc.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 1);
+    log('Oscillator: playing 660Hz for 1s...', 'info');
+    setTimeout(() => { ctx.close(); log('Oscillator done.', 'ok'); }, 1100);
+  } catch (e) {
+    log(`Oscillator FAILED: ${e.message}`, 'fail');
+  }
+}
+
+// ═══════ 3. RECORD & PLAY ═══════
+async function testMicRecord() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      log(`Recording done! ${recordedChunks.length} chunks, total ${recordedChunks.reduce((a,c) => a+c.size, 0)} bytes`, 'ok');
+    };
+    mediaRecorder.start(100);
+    log('Recording for 3 seconds...', 'info');
+    setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 3000);
+  } catch (e) {
+    log(`Record FAILED: ${e.message}`, 'fail');
+  }
+}
+
+function playRecording() {
+  if (recordedChunks.length === 0) { log('Nothing recorded yet!', 'fail'); return; }
+  const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = () => { URL.revokeObjectURL(url); log('Playback done.', 'ok'); };
+  audio.play().then(() => log('Playing recording...', 'info'))
+    .catch(e => log(`Playback FAILED: ${e.message}`, 'fail'));
+}
+
+log('Audio diagnostic ready. Click buttons to test.', 'info');
+</script>
+</body>
+</html>

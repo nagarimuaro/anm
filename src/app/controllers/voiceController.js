@@ -4,7 +4,7 @@
  * 
  * Mendukung streaming: interim transcripts dikirim real-time ke frontend
  */
-const voiceService = require('../services/voiceService');
+const voiceService = require('../services/geminiLiveService'); // Menggunakan Gemini Service
 
 function register(ipc, mainWindow) {
   // Set callback untuk mengirim response ke frontend
@@ -24,6 +24,10 @@ function register(ipc, mainWindow) {
         } else if (data.type === 'interim') {
           // Streaming interim transcript — kata per kata real-time
           mainWindow.webContents.send('voice:interim', { text: data.text });
+        } else if (data.type === 'audio_stream') {
+          mainWindow.webContents.send('voice:audio_stream', data);
+        } else if (data.type === 'stateChange') {
+          mainWindow.webContents.send('voice:stateChange', data);
         } else {
           mainWindow.webContents.send('voice:response', data);
         }
@@ -35,9 +39,11 @@ function register(ipc, mainWindow) {
           mainWindow.webContents.send('session:update', {
             phase: session.phase,
             slots: session.slots,
+            slotDefs: session.slotDefs,
             current_slot: session.current_slot,
             intent: session.intent,
             jenis_surat: session.jenis_surat,
+            persyaratan: session.persyaratan,
           });
         }
       }
@@ -73,11 +79,23 @@ function register(ipc, mainWindow) {
     return { success: true };
   });
 
-  // Audio chunk dari frontend mic (raw PCM Int16)
-  ipc.handle('voice:audioChunk', (event, { chunk, rms, sampleRate, format }) => {
-    const int16Array = new Int16Array(chunk);
-    const buffer = Buffer.from(int16Array.buffer);
-    voiceService.processAudioChunk(buffer, rms);
+  // Audio chunk dari frontend mic (raw PCM Int16, encoded base64)
+  ipc.handle('voice:audioChunk', (event, { base64pcm, chunk, rms, sampleRate, format }) => {
+    // base64pcm: dikirim dari frontend sebagai base64 string (format baru)
+    // chunk: fallback untuk format lama
+    if (base64pcm) {
+      voiceService.processAudioChunkBase64(base64pcm, rms);
+    } else {
+      let buffer;
+      if (chunk instanceof ArrayBuffer) {
+        buffer = Buffer.from(chunk);
+      } else if (Array.isArray(chunk)) {
+        buffer = Buffer.from(new Int16Array(chunk).buffer);
+      } else {
+        buffer = Buffer.from(chunk);
+      }
+      voiceService.processAudioChunk(buffer, rms);
+    }
   });
 
   // TTS only — synthesize teks and play with echo suppression
@@ -141,6 +159,52 @@ function register(ipc, mainWindow) {
     }
   });
 
+  // Start slot filling langsung (bypass LLM intent)
+  ipc.handle('voice:startSlotFillingDirect', async () => {
+    try {
+      return await voiceService.startSlotFillingDirect();
+    } catch (error) {
+      console.error('Start slot filling direct error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // MANUAL MODE: Matikan semua AI processing (user navigasi manual via klik)
+  ipc.handle('voice:enterManualMode', () => {
+    try {
+      voiceService.enterManualMode();
+      return { success: true };
+    } catch (e) {
+      console.error('Enter manual mode error:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // EXIT MANUAL MODE: Aktifkan kembali voice AI
+  ipc.handle('voice:exitManualMode', () => {
+    voiceService.exitManualMode();
+    return { success: true };
+  });
+
+  // Kirim teks konteks ke sesi Gemini Live yang aktif (agar AI bisa bicara sesuai konteks)
+  ipc.handle('voice:sendToGemini', async (event, text) => {
+    try {
+      if (voiceService.session && typeof voiceService.session.sendClientContent === 'function') {
+        voiceService.session.sendClientContent({
+          turns: [{
+            role: 'user',
+            parts: [{ text }]
+          }]
+        });
+        return { success: true };
+      }
+      return { success: false, error: 'No active Gemini session' };
+    } catch (e) {
+      console.error('voice:sendToGemini error:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   // Echo suppression: pause STT + VAD saat audio diputar
   ipc.handle('voice:audioStarted', () => {
     const vadService = require('../../infrastructure/speech/vadService');
@@ -154,8 +218,12 @@ function register(ipc, mainWindow) {
   ipc.handle('voice:audioEnded', () => {
     const vadService = require('../../infrastructure/speech/vadService');
     const sttService = require('../../infrastructure/speech/sttService');
-    vadService.resumeAfterAudio();
-    sttService.resumeStreaming();
+
+    // Cegah nyala otomatis jika sedang dalam mode manual
+    if (!voiceService.isManualMode()) {
+      vadService.resumeAfterAudio();
+      sttService.resumeStreaming();
+    }
     return { success: true };
   });
 
@@ -170,9 +238,25 @@ function register(ipc, mainWindow) {
       intent: session.intent,
       jenis_surat: session.jenis_surat,
       slots: session.slots,
+      slotDefs: session.slotDefs,
       current_slot: session.current_slot,
       result: session.result,
+      persyaratan: session.persyaratan,
     };
+  });
+
+  // Simpan template lengkap (id + input_variables) ke session saat warga memilih template dari UI
+  ipc.handle('session:setTemplate', (event, template) => {
+    const sessionManager = require('../services/sessionManager');
+    sessionManager.setTemplate(template);
+    return { success: true };
+  });
+
+  // Backward compat
+  ipc.handle('session:setTemplateId', (event, templateId) => {
+    const sessionManager = require('../services/sessionManager');
+    sessionManager.setTemplateId(templateId);
+    return { success: true };
   });
 }
 

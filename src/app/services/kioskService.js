@@ -6,7 +6,9 @@ const http = require('http');
 const https = require('https');
 require('dotenv').config();
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000/api';
+// BACKEND_URL harus menunjuk ke BASE url tanpa trailing /api
+// Contoh: http://192.168.1.100:8000 atau https://api.nagari.id
+const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:8000/api').replace(/\/api\/?$/, '');
 const TENANT_TOKEN = process.env.TENANT_TOKEN || '';
 const NAGARI_ID = process.env.NAGARI_ID || 'default-nagari';
 
@@ -20,21 +22,53 @@ class KioskService {
       const isHttps = url.protocol === 'https:';
       const lib = isHttps ? https : http;
 
-      const options = {
-        hostname: url.hostname,
-        port: url.port,
-        path: url.pathname + url.search,
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${TENANT_TOKEN}`,
-          'X-Tenant-ID': NAGARI_ID,
-        },
-        timeout: 15000,
-      };
+        const fs = require('fs');
+        const path = require('path');
+        const { app } = require('electron');
+        const userDataPath = app ? app.getPath('userData') : '';
+        const tokenFilePath = path.join(userDataPath, 'device.json');
+        
+        let deviceToken = '';
+        try {
+          if (fs.existsSync(tokenFilePath)) {
+            const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
+            // Coba berbagai nama field yang mungkin dikembalikan API sintanagari.cloud
+            deviceToken = savedData.device_token
+              || savedData.token
+              || savedData.api_key
+              || savedData.key
+              || savedData.access_token
+              || '';
+            
+            if (!deviceToken) {
+              console.warn('[KioskAPI] device.json ditemukan tapi tidak ada token field. Keys:', Object.keys(savedData).join(', '));
+            }
+          } else {
+            console.warn('[KioskAPI] device.json tidak ditemukan di:', tokenFilePath);
+          }
+        } catch (e) {
+          console.warn('[KioskAPI] Gagal baca device.json:', e.message);
+        }
 
-      const req = lib.request(options, (res) => {
+        const bodyString = body ? JSON.stringify(body) : '';
+        
+        const options = {
+          hostname: url.hostname,
+          port: url.port || (isHttps ? 443 : 80),
+          path: url.pathname + url.search,
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Device-Key': deviceToken,
+            ...(bodyString && { 'Content-Length': Buffer.byteLength(bodyString) })
+          },
+          timeout: 15000,
+        };
+
+        console.log(`[KioskAPI] ${method} ${url.href} (token: ${deviceToken ? deviceToken.substring(0,8)+'...' : 'NONE'})`);
+
+        const req = lib.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -57,8 +91,8 @@ class KioskService {
         reject(new Error('Backend request timeout'));
       });
 
-      if (body) {
-        req.write(JSON.stringify(body));
+      if (bodyString) {
+        req.write(bodyString);
       }
       req.end();
     });
@@ -69,11 +103,44 @@ class KioskService {
    */
   async getWarga(nik) {
     try {
-      return await this._request('GET', `/v1/warga/${nik}`);
+      return await this._request('POST', '/api/device/surat/check-nik', { nik });
     } catch (error) {
       console.error('KioskService: getWarga error:', error.message);
       // Fallback mock data untuk testing/development
       return this._getMockWarga(nik);
+    }
+  }
+
+  /**
+   * Get daftar template surat
+   */
+  async getTemplatesSurat() {
+    try {
+      return await this._request('GET', '/api/device/surat/templates');
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Cek Status Surat / Resi
+   */
+  async cekStatusSurat(trackingCode) {
+    try {
+      return await this._request('GET', `/api/device/surat/status/${trackingCode}`);
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Riwayat Surat
+   */
+  async getRiwayatSurat(nik) {
+    try {
+      return await this._request('POST', '/api/device/surat/history', { nik });
+    } catch (error) {
+      return { success: false, message: error.message };
     }
   }
 
@@ -182,11 +249,21 @@ class KioskService {
 
   /**
    * Buat surat baru
-   * Sesuai format di redesain.md Bagian Fase 5
    */
   async buatSurat(data) {
     try {
-      return await this._request('POST', '/v1/surat', data);
+      // data: { nik, template_id, keperluan, custom_data }
+      const response = await this._request('POST', '/api/device/surat/request', data);
+      // Unwrap: API response has { success, data: { tracking_code, tracking_qr_base64, ... } }
+      const payload = response.data || response;
+      
+      // Fix QR: API returns full data URL, strip the prefix so we can use it as raw base64
+      if (payload.tracking_qr_base64) {
+        payload.tracking_qr_base64 = payload.tracking_qr_base64
+          .replace(/^data:image\/[a-z]+;base64,/, '');
+      }
+      
+      return { ...response, ...payload };
     } catch (error) {
       console.error('KioskService: buatSurat error:', error.message);
 
@@ -196,8 +273,59 @@ class KioskService {
         status: 'success',
         surat_id: `MOCK-${Date.now()}`,
         kode_resi: mockResi,
+        tracking_code: mockResi,
         pesan: 'Surat berhasil diajukan (mode offline).',
       };
+    }
+  }
+
+  // ── Fitur HR / Absensi Wajah ──
+  
+  async hrFaceMatch(descriptor) {
+    try {
+      return await this._request('POST', '/api/device/hr/face-match', { descriptor });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async hrCheckin(pegawai_id, confidence) {
+    try {
+      return await this._request('POST', '/api/device/hr/checkin', { pegawai_id, face_confidence: confidence });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async hrCheckout(pegawai_id, confidence) {
+    try {
+      return await this._request('POST', '/api/device/hr/checkout', { pegawai_id, face_confidence: confidence });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async hrFaceEnroll(token, descriptor) {
+    try {
+      return await this._request('POST', '/api/device/hr/face-enroll', { token, descriptor });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async hrFaceEnrollCheckToken(token) {
+    try {
+      return await this._request('POST', '/api/device/hr/face-enroll/check-token', { token });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async hrStatusMonitor() {
+    try {
+      return await this._request('GET', '/api/device/hr/status');
+    } catch (error) {
+      return { success: false, message: error.message };
     }
   }
 

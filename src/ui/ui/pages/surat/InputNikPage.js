@@ -28,10 +28,16 @@ const InputNikPage = () => {
           if (fromVoice && slotKey && electron) {
             // Kirim NIK ke slot filling engine via voice system
             await electron.ipcRenderer.invoke('voice:keyboardInput', { slotKey, value: nik });
+          } else if (fromVoice) {
+            // User masuk dari voice AI (navigate_to_page) — JANGAN matikan AI
+            // Langsung navigasi ke profil warga, biarkan voice tetap aktif
+          } else if (electron) {
+            // User masuk manual (bukan dari voice) — matikan AI di background
+            await electron.ipcRenderer.invoke('voice:enterManualMode');
           }
-          
+
           // Selalu navigasi ke profil warga dulu
-          navigate('/profil-warga', { state: { nik } });
+          navigate(nextPath, { state: { nik, fromVoice: !!fromVoice } });
         } catch (err) {
           setError('Terjadi kesalahan. Silakan coba lagi.');
           setLoading(false);

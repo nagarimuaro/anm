@@ -186,13 +186,7 @@ const HomePage = () => {
 
       {/* Hero Section */}
       <div style={{ textAlign: 'center', animation: 'fadeSlideDown 0.8s ease' }}>
-        <div style={{ 
-          fontSize: '72px', 
-          marginBottom: '16px',
-          filter: 'drop-shadow(0 0 20px rgba(99, 102, 241, 0.4))'
-        }}>
-          🤖
-        </div>
+
         <h1 className="page-title" style={{ fontSize: '42px', marginBottom: '8px' }}>
           Halo, Saya SINTA
         </h1>

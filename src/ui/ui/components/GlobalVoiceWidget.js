@@ -8,36 +8,53 @@
 import React, { useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useVoiceSession from '../hooks/useVoiceSession';
+import SintaOrb from './SintaOrb';
+
+const electron = window.require ? window.require('electron') : null;
 
 const GlobalVoiceWidget = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const voice = useVoiceSession();
-  const lastNavigatedRef = useRef({ action: null, count: 0 });
+  // Track last handled timestamp to prevent duplicate navigation fires
+  const lastHandledTimeRef = useRef(null);
 
-  // Handle navigation actions from AI — sync UI with AI phase
+  // Handle navigation actions from AI — keyed on lastActionTime to prevent re-firing
   React.useEffect(() => {
     if (!voice.lastAction) return;
-    
-    // Ignore TTS_ONLY — these come from pages calling voice:synthesize directly
     if (voice.lastAction === 'TTS_ONLY') return;
+
+    // Deduplicate: skip if we already handled this exact action event
+    const eventTime = voice.lastActionTime;
+    if (eventTime && eventTime === lastHandledTimeRef.current) return;
+    lastHandledTimeRef.current = eventTime;
 
     const currentPath = location.pathname;
 
     switch (voice.lastAction) {
       case 'NAVIGATE': {
-        if (voice.sessionData?.intent === 'CEK_BANSOS') {
+        if (voice.lastPath) {
+          if (currentPath !== voice.lastPath) {
+            const isInputNik = voice.lastPath === '/input-nik';
+            navigate(voice.lastPath, {
+              state: {
+                nextPath: voice.lastNextPath,
+                fromVoice: isInputNik ? true : undefined,
+                ...(voice.sessionData || {})
+              }
+            });
+          }
+        } else if (voice.sessionData?.intent === 'CEK_BANSOS') {
           if (currentPath !== '/input-nik') {
-            navigate('/input-nik', { state: { nextPath: '/bansos' } });
+            navigate('/input-nik', { state: { nextPath: '/bansos', fromVoice: true } });
           }
         } else if (voice.sessionData?.intent === 'BUKU_TAMU') {
           if (currentPath !== '/buku-tamu') {
             navigate('/buku-tamu');
           }
         } else if (voice.sessionData?.intent?.startsWith('BUAT_SURAT')) {
-          // Surat intent — navigasi ke input NIK dulu
           if (currentPath !== '/input-nik' && currentPath !== '/profil-warga' && currentPath !== '/surat') {
-            navigate('/input-nik', { state: { nextPath: '/profil-warga' } });
+            navigate('/input-nik', { state: { nextPath: '/profil-warga', fromVoice: true } });
           }
         }
         break;
@@ -45,22 +62,18 @@ const GlobalVoiceWidget = () => {
 
       case 'REQUEST_KEYBOARD': {
         if (currentPath !== '/input-nik') {
-          navigate('/input-nik', { state: { 
-            nextPath: '/profil-warga',
-            slotKey: voice.sessionData?.current_slot,
-            fromVoice: true,
-          }});
+          navigate('/input-nik', {
+            state: {
+              nextPath: '/profil-warga',
+              slotKey: voice.sessionData?.current_slot,
+              fromVoice: true,
+            }
+          });
         }
         break;
       }
 
-      case 'SHOW_RECEIPT': {
-        if (currentPath !== '/printing') {
-          navigate('/printing', { state: { result: voice.sessionData } });
-        }
-        break;
-      }
-
+      case 'SHOW_RECEIPT':
       case 'PROCESSING': {
         if (currentPath !== '/printing') {
           navigate('/printing', { state: { result: voice.sessionData } });
@@ -97,38 +110,46 @@ const GlobalVoiceWidget = () => {
       }
 
       case 'GREETING':
-      case 'GENERAL_RESPONSE': {
+      case 'GENERAL_RESPONSE':
+      default:
         break;
-      }
     }
-  }, [voice.lastAction, voice.phase, voice.sessionData, navigate, location.pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.lastActionTime, voice.lastAction]);
 
   // Determine what text to show — interim (live) or final
   const displayTranscript = voice.interimTranscript || voice.transcript;
 
   // Determine FAB state
-  const fabState = voice.isPlaying ? 'playing' 
-    : voice.isProcessing ? 'processing'
-    : voice.isListening ? 'listening' 
-    : 'idle';
+  const fabState = voice.isConnecting ? 'connecting'
+    : voice.isPlaying ? 'playing'
+      : voice.isProcessing ? 'processing'
+        : voice.isListening ? 'listening'
+          : 'idle';
 
-  const fabIcon = voice.isPlaying ? '🔊' 
-    : voice.isProcessing ? '⏳'
-    : voice.isListening ? '🎤' 
-    : '🎤';
+  const fabIcon = voice.isConnecting ? '⏳'
+    : voice.isPlaying ? '🔊'
+      : voice.isProcessing ? '⚙️'
+        : voice.isListening ? '🎤'
+          : '🎤';
 
   return (
     <div className="voice-widget">
       {/* Chat Bubble */}
-      {(displayTranscript || voice.aiResponse) && (
+      {(displayTranscript || voice.aiResponse || voice.isConnecting) && (
         <div className="voice-bubble">
-          {displayTranscript && (
+          {voice.isConnecting && (
+            <div className="voice-bubble-system">
+              🔌 Menyambungkan ke Gemini...
+            </div>
+          )}
+          {displayTranscript && !voice.isConnecting && (
             <div className={`voice-bubble-user ${voice.interimTranscript ? 'interim' : ''}`}>
               🗣️ "{displayTranscript}"
               {voice.interimTranscript && <span className="interim-indicator">...</span>}
             </div>
           )}
-          {voice.aiResponse && (
+          {voice.aiResponse && !voice.isConnecting && (
             <div className="voice-bubble-ai">
               🤖 {voice.aiResponse}
             </div>
@@ -144,10 +165,26 @@ const GlobalVoiceWidget = () => {
       {/* FAB Button */}
       <button
         className={`voice-fab ${fabState}`}
-        onClick={voice.toggle}
+        onClick={() => {
+          // Jika akan mengaktifkan voice, keluar dari manual mode dulu
+          const electronApi = window.require ? window.require('electron') : null;
+          if (!voice.isActive && electronApi) {
+            electronApi.ipcRenderer.invoke('voice:exitManualMode');
+          }
+          voice.toggle();
+        }}
         title={voice.isActive ? 'Matikan Asisten' : 'Aktifkan Asisten'}
       >
-        {fabIcon}
+        <SintaOrb
+          size={80}
+          state={
+            !voice.isActive ? 'idle' :
+              voice.isConnecting ? 'connecting' :
+                voice.isPlaying ? 'playing' :
+                  voice.isProcessing ? 'processing' :
+                    voice.isListening ? 'listening' : 'idle'
+          }
+        />
       </button>
     </div>
   );

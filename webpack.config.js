@@ -49,6 +49,12 @@ module.exports = {
     }),
   ],
   devServer: {
+    client: {
+      logging: 'error', // Menyembunyikan log client kecuali error
+    },
+    devMiddleware: {
+      stats: 'errors-only', // Menyembunyikan log wait until bundle finished
+    },
     static: [
       {
         directory: path.join(__dirname, 'dist'),

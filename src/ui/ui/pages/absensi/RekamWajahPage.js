@@ -1,23 +1,16 @@
 /**
  * RekamWajahPage — Pendaftaran Wajah Pegawai
  * 
- * Flow: Pilih Pegawai → Buka Kamera → Auto-Capture Wajah → Review → Simpan
+ * Flow: Token Admin → Pilih Pegawai (dari API) → Buka Kamera → Auto-Capture Wajah → Review → Kirim ke Server
  * 
- * Auto-capture otomatis saat wajah terdeteksi menggunakan face-api.js
- * Menyimpan Float32Array descriptor untuk proses pengenalan.
+ * Auto-capture otomatis saat wajah terdeteksi menggunakan face-api.js.
+ * Descriptor dikirim ke backend via IPC → POST /api/device/hr/face-enroll
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as faceapi from '@vladmandic/face-api';
 
-// Data pegawai — shared constant
-const PEGAWAI_DB = [
-  { id: 'PEG-001', nip: '198501152010011001', nama: 'Ir. Muhammad Fadli, M.Si', jabatan: 'Wali Nagari' },
-  { id: 'PEG-002', nip: '199003212015012001', nama: 'Dewi Sartika, S.Pd', jabatan: 'Sekretaris Nagari' },
-  { id: 'PEG-003', nip: '199205102018011002', nama: 'Rendi Pratama, A.Md', jabatan: 'Kepala Urusan Umum' },
-  { id: 'PEG-004', nip: '198811302012012003', nama: 'Siti Nurhaliza, S.E', jabatan: 'Kepala Urusan Keuangan' },
-  { id: 'PEG-005', nip: '199507082020012001', nama: 'Andi Saputra', jabatan: 'Staf Pelayanan' },
-];
+const electron = window.require ? window.require('electron') : null;
 
 function getInitials(nama) {
   return nama.split(' ').filter(w => w.length > 1 && w[0] === w[0].toUpperCase()).slice(0, 2).map(w => w[0]).join('');
@@ -30,27 +23,15 @@ function getAvatarColor(nama) {
   return colors[hash % colors.length];
 }
 
-function getSavedFaces() {
-  try {
-    return JSON.parse(localStorage.getItem('anm_face_db') || '{}');
-  } catch { return {}; }
-}
-
-// Ensure Float32Array values are saved as arrays
-function saveFaceData(pegawaiId, descriptors, avatarUrl) {
-  const db = getSavedFaces();
-  db[pegawaiId] = { 
-    descriptors: descriptors.map(d => Array.from(d)), 
-    avatarUrl, 
-    registeredAt: new Date().toISOString() 
-  };
-  localStorage.setItem('anm_face_db', JSON.stringify(db));
-}
-
 const RekamWajahPage = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState('select');       // select | camera | review | done
+  // step: token → select → camera → review → done
+  const [step, setStep] = useState('token');
+  const [adminToken, setAdminToken] = useState('');
+  const [tokenError, setTokenError] = useState('');
   const [selectedPegawai, setSelectedPegawai] = useState(null);
+  const [tokenChecking, setTokenChecking] = useState(false);
+  const [enrollError, setEnrollError] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   
@@ -62,7 +43,6 @@ const RekamWajahPage = () => {
   
   const [captureCountdown, setCaptureCountdown] = useState(null);
   const [flashActive, setFlashActive] = useState(false);
-  const [savedFaces, setSavedFaces] = useState(getSavedFaces());
   const [faceDetected, setFaceDetected] = useState(false);
   const [autoCapturing, setAutoCapturing] = useState(false);
   const [instruction, setInstruction] = useState('');
@@ -300,40 +280,50 @@ const RekamWajahPage = () => {
     }
   }, [photos.length]);
 
-  const handleSelectPegawai = (pegawai) => {
-    setSelectedPegawai(pegawai);
-    setPhotos([]);
-    setDescriptors([]);
-    setStep('camera');
-  };
 
-  const handleSave = () => {
-    if (selectedPegawai && photos.length >= REQUIRED_PHOTOS && descriptors.length >= REQUIRED_PHOTOS) {
-      // Save descriptors + 1 avatar photo
-      saveFaceData(selectedPegawai.id, descriptors, photos[0]);
-      setSavedFaces(getSavedFaces());
-      setStep('done');
-      stopCamera();
+
+  const handleSave = async () => {
+    if (!selectedPegawai || photos.length < REQUIRED_PHOTOS || descriptors.length < REQUIRED_PHOTOS) return;
+    setEnrollError('');
+
+    // Pick the best descriptor (middle sample)
+    const bestDescriptor = Array.from(descriptors[1] || descriptors[0]);
+
+    try {
+      if (electron) {
+        const res = await electron.ipcRenderer.invoke('kiosk:api:hrFaceEnroll', {
+          token: adminToken,
+          descriptor: bestDescriptor,
+        });
+        if (!res || !res.success) {
+          setEnrollError(res?.message || 'Gagal mendaftarkan wajah ke server.');
+          return;
+        }
+      }
+    } catch (err) {
+      setEnrollError('Koneksi ke server gagal. Periksa jaringan.');
+      return;
     }
+
+    setStep('done');
+    stopCamera();
   };
 
   const handleReset = () => {
     stopCamera();
-    setStep('select');
+    setStep('token');
+    setAdminToken('');
+    setTokenError('');
     setSelectedPegawai(null);
     setPhotos([]);
     setDescriptors([]);
     setCaptureCountdown(null);
     setAutoCapturing(false);
     setFaceDetected(false);
+    setEnrollError('');
   };
 
-  const handleDeleteFace = (pegawaiId) => {
-    const db = getSavedFaces();
-    delete db[pegawaiId];
-    localStorage.setItem('anm_face_db', JSON.stringify(db));
-    setSavedFaces(getSavedFaces());
-  };
+  // Delete enrollment not supported from Kiosk side — must be done from Admin Panel
 
   useEffect(() => {
     if (step === 'camera') startCamera();
@@ -353,18 +343,75 @@ const RekamWajahPage = () => {
       {/* Header */}
       <div className="absensi-header">
         <h2 className="page-title">
+          {step === 'token' && '🔐 Verifikasi Admin'}
           {step === 'select' && '📸 Rekam Wajah Pegawai'}
           {step === 'camera' && '📷 Ambil Foto Wajah'}
           {step === 'review' && '✅ Verifikasi Foto'}
           {step === 'done' && '🎉 Pendaftaran Berhasil'}
         </h2>
         <p className="page-subtitle" style={{ marginBottom: 0 }}>
-          {step === 'select' && (modelError || 'Pilih pegawai untuk mendaftarkan wajah')}
-          {step === 'camera' && (!modelsLoaded ? 'Memuat model AI...' : `Foto ${Math.min(photos.length + 1, REQUIRED_PHOTOS)} dari ${REQUIRED_PHOTOS} — Posisikan wajah di dalam guide`)}
+          {step === 'token' && 'Masukkan Token Pendaftaran yang diberikan Admin'}
+          {step === 'camera' && (!modelsLoaded ? 'Memuat model AI...' : `Halo ${selectedPegawai?.nama?.split(' ')[0] || 'Pegawai'}, silakan arahkan wajah Anda ke kamera (${Math.min(photos.length + 1, REQUIRED_PHOTOS)}/${REQUIRED_PHOTOS})`)}
           {step === 'review' && 'Pastikan semua foto terlihat jelas'}
           {step === 'done' && 'Wajah pegawai berhasil didaftarkan ke sistem'}
         </p>
       </div>
+
+      {/* Step: Token Admin */}
+      {step === 'token' && (
+        <div style={{ maxWidth: 400, margin: '24px auto', textAlign: 'center' }}>
+          <div className="glass-card" style={{ padding: '32px 28px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🔑</div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
+              Token ini diperoleh dari Admin Panel SINTANAGARI (6 atau 14 digit).
+            </p>
+            <input
+              type="text"
+              placeholder="Masukkan token (contoh: 482917)"
+              value={adminToken}
+              onChange={e => { setAdminToken(e.target.value); setTokenError(''); }}
+              style={{
+                width: '100%', padding: '14px', borderRadius: 10,
+                background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.15)',
+                color: 'white', fontSize: 20, textAlign: 'center', letterSpacing: 4, marginBottom: 8,
+              }}
+            />
+            {tokenError && <p style={{ color: 'var(--accent-danger)', fontSize: 13, marginBottom: 12 }}>{tokenError}</p>}
+            <button
+              className="btn btn-primary btn-block"
+              style={{ width: '100%', marginTop: 12 }}
+              disabled={adminToken.trim().length < 6 || tokenChecking}
+              onClick={async () => {
+                if (adminToken.trim().length < 6) { setTokenError('Token minimal 6 karakter.'); return; }
+                if (!electron) return;
+                
+                setTokenChecking(true);
+                setTokenError('');
+                try {
+                  const res = await electron.ipcRenderer.invoke('kiosk:api:hrFaceEnrollCheckToken', adminToken.trim());
+                  if (res && res.success && res.data) {
+                    setSelectedPegawai(res.data);
+                    setPhotos([]);
+                    setDescriptors([]);
+                    setStep('camera');
+                  } else {
+                    setTokenError(res?.message || 'Kode tidak valid atau sudah kedaluwarsa.');
+                  }
+                } catch (e) {
+                  setTokenError('Gagal memverifikasi token. Periksa koneksi.');
+                } finally {
+                  setTokenChecking(false);
+                }
+              }}
+            >
+              {tokenChecking ? 'Memeriksa...' : 'Lanjut →'}
+            </button>
+          </div>
+          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/absensi')}>
+            ← Kembali ke Absensi
+          </button>
+        </div>
+      )}
 
       {modelError && (
         <div style={{ background: 'var(--accent-danger)', color: 'white', padding: '12px 20px', borderRadius: 8, marginTop: 16 }}>
@@ -372,57 +419,7 @@ const RekamWajahPage = () => {
         </div>
       )}
 
-      {/* Step: Select Pegawai */}
-      {step === 'select' && !modelError && (
-        <div className="rekam-select-container">
-          <div className="rekam-pegawai-list">
-            {PEGAWAI_DB.map((p) => {
-              const isRegistered = !!savedFaces[p.id];
-              const colors = getAvatarColor(p.nama);
-              return (
-                <div key={p.id} className={`rekam-pegawai-card ${isRegistered ? 'registered' : ''}`}>
-                  <div className="rekam-pegawai-avatar" style={{
-                    background: `linear-gradient(135deg, ${colors[0]}, ${colors[1]})`,
-                  }}>
-                    {savedFaces[p.id]?.avatarUrl ? (
-                      <img src={savedFaces[p.id].avatarUrl} alt={p.nama} />
-                    ) : (
-                      <span>{getInitials(p.nama)}</span>
-                    )}
-                    {isRegistered && <div className="rekam-registered-badge">✓</div>}
-                  </div>
-                  <div className="rekam-pegawai-info">
-                    <div className="rekam-pegawai-nama">{p.nama}</div>
-                    <div className="rekam-pegawai-jabatan">{p.jabatan}</div>
-                    {isRegistered && (
-                      <div className="rekam-registered-label">Wajah Terdaftar</div>
-                    )}
-                  </div>
-                  <div className="rekam-pegawai-actions">
-                    <button
-                      className="btn btn-primary"
-                      style={{ fontSize: 13, padding: '8px 16px' }}
-                      onClick={() => handleSelectPegawai(p)}
-                      disabled={!modelsLoaded}
-                    >
-                      {isRegistered ? '🔄 Ulang' : '📸 Rekam'}
-                    </button>
-                    {isRegistered && (
-                      <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: 11, padding: '6px 10px', marginTop: 4 }}
-                        onClick={() => handleDeleteFace(p.id)}
-                      >
-                        Hapus
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+
 
       {/* Step: Camera — AUTO CAPTURE via Face-API */}
       {step === 'camera' && (
@@ -530,9 +527,15 @@ const RekamWajahPage = () => {
             </p>
           </div>
 
+          {enrollError && (
+            <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '10px 16px', marginTop: 12, color: '#f87171', fontSize: 14 }}>
+              ⚠️ {enrollError}
+            </div>
+          )}
+
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
             <button className="btn btn-primary btn-lg" onClick={handleSave}>
-              ✓ Simpan & Daftarkan
+              ✓ Kirim & Daftarkan
             </button>
             <button className="btn btn-secondary" onClick={() => { setPhotos([]); setDescriptors([]); setStep('camera'); }}>
               ↻ Ulangi Rekaman
@@ -577,9 +580,9 @@ const RekamWajahPage = () => {
         <button
           className="btn btn-secondary"
           style={{ marginTop: 24 }}
-          onClick={() => navigate('/absensi')}
+          onClick={() => setStep('token')}
         >
-          ← Kembali ke Absensi
+          ← Ubah Token
         </button>
       )}
     </div>

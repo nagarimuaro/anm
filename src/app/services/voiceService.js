@@ -23,6 +23,7 @@ class VoiceService {
     this.onResponseCallback = null;
     this.onStateChangeCallback = null;
     this._isProcessing = false;
+    this._manualMode = false;      // Jika true, semua voice/AI processing dihentikan
     this._utteranceBuffer = '';     // Buffer untuk mengumpulkan final segments
     this._utteranceTimer = null;    // Timer untuk flush utterance
     this._setupSTTListeners();
@@ -36,14 +37,14 @@ class VoiceService {
   _setupSTTListeners() {
     // Interim transcript — kata per kata real-time
     sttService.on('interimTranscript', (text) => {
-      if (this._isProcessing) return;
+      if (this._isProcessing || this._manualMode) return;
       this._emitResponse({ type: 'interim', text: this._utteranceBuffer + text });
       vadService.onSpeechStarted();
     });
 
     // Final transcript — satu segment selesai (bisa ada beberapa per utterance)
     sttService.on('finalTranscript', (text) => {
-      if (this._isProcessing) return;
+      if (this._isProcessing || this._manualMode) return;
       this._utteranceBuffer += (this._utteranceBuffer ? ' ' : '') + text;
 
       // Reset utterance timer — tunggu 800ms tanpa segment baru berarti utterance selesai
@@ -55,7 +56,7 @@ class VoiceService {
 
     // Speech final — Deepgram confirms utterance is complete
     sttService.on('speechFinal', (text) => {
-      if (this._isProcessing) return;
+      if (this._isProcessing || this._manualMode) return;
       // Langsung flush tanpa tunggu timer
       if (this._utteranceTimer) {
         clearTimeout(this._utteranceTimer);
@@ -70,7 +71,7 @@ class VoiceService {
 
     // Utterance end — Deepgram detects end of speech
     sttService.on('utteranceEnd', () => {
-      if (this._isProcessing) return;
+      if (this._isProcessing || this._manualMode) return;
       if (this._utteranceBuffer.trim()) {
         if (this._utteranceTimer) {
           clearTimeout(this._utteranceTimer);
@@ -157,6 +158,12 @@ class VoiceService {
   async handleTranscriptDirect(transcript) {
     if (!transcript || transcript.trim().length < 3) {
       console.log('Transcript terlalu pendek, skip.');
+      return;
+    }
+
+    // MANUAL MODE: jangan proses transcript jika user sedang navigasi manual
+    if (this._manualMode) {
+      console.log(`🚫 Manual mode aktif, skip transcript: "${transcript}"`);
       return;
     }
 
@@ -332,10 +339,34 @@ class VoiceService {
     const kioskService = require('./kioskService');
 
     try {
-      const suratData = {
-        jenis_surat: session.jenis_surat,
-        ...session.slots,
-      };
+      // Bangun payload sesuai format API: POST /api/device/surat/request
+      // { nik, template_id, keperluan, custom_data }
+      const slots = session.slots || {};
+      const slotDefs = session.slotDefs || [];
+      
+      const nik = slots.nik || '';
+      const template_id = session.templateId || null;
+      
+      // Tentukan field "keperluan": ambil dari slot bernama keperluan/tujuan/keterangan
+      // Docs: keperluan adalah top-level field, sisanya masuk custom_data
+      const keperluanKeys = ['keperluan', 'tujuan', 'keterangan', 'alasan'];
+      let keperluan = '';
+      const custom_data = {};
+      
+      slotDefs.forEach(def => {
+        if (def.key === 'nik') return; // nik sudah di-handle
+        const val = slots[def.key];
+        if (!val) return;
+        
+        if (keperluanKeys.includes(def.key) && !keperluan) {
+          keperluan = val; // Field pertama yang cocok jadi keperluan utama
+        } else {
+          custom_data[def.key] = val; // Sisanya masuk custom_data
+        }
+      });
+
+      const suratData = { nik, template_id, keperluan, custom_data };
+      console.log('[voiceService] buatSurat payload:', JSON.stringify(suratData));
 
       const responseText = 'Data sedang diproses. Mohon tunggu sebentar.';
       const audioPath = await ttsService.generateAudio(responseText);
@@ -352,7 +383,11 @@ class VoiceService {
       const result = await kioskService.buatSurat(suratData);
       const completedSession = await sessionManager.completeSession(result);
 
-      const doneText = `Pengajuan surat bapak/ibu telah berhasil. Kode resi anda adalah ${result.kode_resi || 'tersedia di layar'}. Silakan tunjukkan kode resi ini kepada petugas nagari. Terima kasih.`;
+      // Ambil tracking_code dan qr_base64 dari response API
+      const trackingCode = result.tracking_code || result.kode_resi || 'tersedia di layar';
+      const qrBase64 = result.tracking_qr_base64 || null;
+
+      const doneText = `Pengajuan surat bapak/ibu telah berhasil. Kode resi anda adalah ${trackingCode}. Silakan ambil bukti resi ini dan tunjukkan kepada petugas nagari. Terima kasih.`;
       const doneAudioPath = await ttsService.generateAudio(doneText);
 
       this._emitResponse({
@@ -361,7 +396,7 @@ class VoiceService {
         action: 'SHOW_RECEIPT',
         responseText: doneText,
         audioPath: doneAudioPath,
-        result,
+        result: { ...result, tracking_code: trackingCode, tracking_qr_base64: qrBase64 },
       });
     } catch (error) {
       console.error('Backend execution error:', error.message);
@@ -379,6 +414,114 @@ class VoiceService {
 
       await sessionManager.abandonSession();
     }
+  }
+
+  /**
+   * Start slot filling secara langsung (bypass LLM intent)
+   * Dipanggil ketika user sudah memilih template dari UI
+   * 
+   * PENTING: Method ini HARUS membuat session baru agar tidak bentrok
+   * dengan background voice processing yang mungkin sedang berjalan.
+   */
+  async startSlotFillingDirect() {
+    // Ambil template data sebelum membuat session baru
+    let currentSession = sessionManager.getSession();
+    
+    // Simpan data template dari session lama (diset oleh session:setTemplate)
+    const savedSlotDefs = currentSession?.slotDefs ? [...currentSession.slotDefs] : null;
+    const savedTemplateId = currentSession?.templateId;
+    const savedTemplateNama = currentSession?.templateNama;
+    const savedSlots = currentSession?.slots ? {...currentSession.slots} : null;
+
+    console.log('🎯 startSlotFillingDirect: slotDefs=', savedSlotDefs?.map(s => s.key), 'templateId=', savedTemplateId);
+
+    if (!savedSlotDefs || savedSlotDefs.length === 0) {
+      console.error('startSlotFillingDirect: Tidak ada template/slot yang dipilih');
+      return { success: false, error: 'Tidak ada template yang dipilih di session' };
+    }
+
+    this._isProcessing = true;
+    try {
+      vadService.setProcessing();
+      sttService.pauseStreaming();
+
+      // Buat session BARU untuk menghentikan background voice processing  
+      // yang mungkin sedang menggunakan session lama
+      const newSession = await sessionManager.startSession();
+      
+      // Restore template data ke session baru
+      newSession.templateId = savedTemplateId;
+      newSession.templateNama = savedTemplateNama;
+      newSession.slotDefs = savedSlotDefs;
+      newSession.slots = savedSlots || {};
+      // Pastikan semua slot terinitialisasi
+      savedSlotDefs.forEach(def => {
+        if (newSession.slots[def.key] === undefined) {
+          newSession.slots[def.key] = null;
+        }
+      });
+
+      sessionManager.setPhase('SLOT_FILLING');
+      
+      if (this._manualMode) {
+        // Mode manual: jangan putar suara dan jangan paksa microphone menyala
+        const result = await slotFillingEngine.askNextSlot(true); // skipAudio = true
+        this._emitResponse({
+          type: 'response',
+          phase: 'SLOT_FILLING',
+          ...result,
+          audioPath: null // Pastikan tidak ada audio
+        });
+      } else {
+        const result = await slotFillingEngine.askNextSlot(false);
+        this._emitResponse({
+          type: 'response',
+          phase: 'SLOT_FILLING',
+          ...result,
+        });
+        vadService.pauseForAudio();
+      }
+      
+      return { success: true };
+    } catch (err) {
+      console.error('startSlotFillingDirect error:', err);
+      return { success: false, error: err.message };
+    } finally {
+      this._isProcessing = false;
+    }
+  }
+
+  /**
+   * MANUAL MODE: Aktifkan mode manual (semua voice/AI dihentikan)
+   * Dipanggil saat user navigasi via klik UI
+   */
+  enterManualMode() {
+    this._manualMode = true;
+    this._utteranceBuffer = '';
+    if (this._utteranceTimer) {
+      clearTimeout(this._utteranceTimer);
+      this._utteranceTimer = null;
+    }
+    // Pause STT agar tidak mengirim transcript
+    sttService.pauseStreaming();
+    console.log('🖱️  Manual mode: ON — AI processing dihentikan');
+  }
+
+  /**
+   * EXIT MANUAL MODE: Kembalikan ke voice mode
+   * Dipanggil saat user menekan tombol voice FAB
+   */
+  exitManualMode() {
+    this._manualMode = false;
+    sttService.resumeStreaming();
+    console.log('🎤 Manual mode: OFF — Voice AI aktif kembali');
+  }
+
+  /**
+   * Cek apakah sedang dalam manual mode
+   */
+  isManualMode() {
+    return this._manualMode;
   }
 
   /**
@@ -439,7 +582,7 @@ class VoiceService {
     this._isProcessing = true;
 
     try {
-      const result = await slotFillingEngine.processSlotAnswer(value);
+      const result = await slotFillingEngine.processSlotAnswer(value, this._manualMode);
 
       if (slotKey === 'nik' && result.action !== 'RETRY_SLOT') {
         const kioskService = require('./kioskService');
@@ -453,9 +596,13 @@ class VoiceService {
 
           if (result.action === 'ASK_SLOT') {
             const combined = confirmText + result.responseText;
-            const audioPath = await ttsService.generateAudio(combined);
+            let audioPath = null;
+            
+            if (!this._manualMode) {
+              audioPath = await ttsService.generateAudio(combined);
+              vadService.pauseForAudio();
+            }
 
-            vadService.pauseForAudio();
             this._emitResponse({
               type: 'response',
               phase: 'SLOT_FILLING',
@@ -467,8 +614,12 @@ class VoiceService {
               wargaData: warga,
             });
           } else {
-            const audioPath = await ttsService.generateAudio(confirmText);
-            vadService.pauseForAudio();
+            let audioPath = null;
+            if (!this._manualMode) {
+              audioPath = await ttsService.generateAudio(confirmText);
+              vadService.pauseForAudio();
+            }
+
             this._emitResponse({
               type: 'response',
               phase: session.phase,
@@ -482,11 +633,14 @@ class VoiceService {
         }
       }
 
-      vadService.pauseForAudio();
+      if (!this._manualMode) {
+        vadService.pauseForAudio();
+      }
       this._emitResponse({
         type: 'response',
         phase: session.phase,
         ...result,
+        audioPath: this._manualMode ? null : result.audioPath
       });
     } finally {
       this._isProcessing = false;

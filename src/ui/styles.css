@@ -461,45 +461,34 @@ body {
 
 /* Voice FAB */
 .voice-fab {
-  width: 72px;
-  height: 72px;
+  width: 90px;
+  height: 90px;
   border-radius: var(--radius-full);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
   transition: all var(--transition-normal);
   position: relative;
+  background: transparent;
+  padding: 0;
 }
 
 .voice-fab.idle {
-  background: var(--bg-glass);
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
-.voice-fab.listening {
-  background: var(--gradient-accent);
-  color: white;
-  box-shadow: var(--shadow-glow);
-  animation: pulse-ring 2s infinite;
+.voice-fab.idle:hover {
+  transform: scale(1.1);
 }
 
-.voice-fab.processing {
-  background: rgba(251, 191, 36, 0.2);
-  border: 2px solid var(--accent-warning);
-  color: var(--accent-warning);
-  animation: spin-slow 2s linear infinite;
+.voice-fab:not(.idle) {
+  background: transparent;
 }
 
-.voice-fab.playing {
-  background: rgba(56, 189, 248, 0.2);
-  border: 2px solid var(--accent-info);
-  color: var(--accent-info);
-  animation: pulse-glow 1.5s ease infinite;
-}
 
 /* ── Phase Indicator ── */
 .phase-bar {

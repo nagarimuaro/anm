@@ -13,8 +13,7 @@ class SlotFillingEngine {
    * Proses jawaban user untuk slot yang sedang aktif
    * @param {string} userAnswer - Jawaban user (dari STT atau keyboard)
    * @returns {Object} - { action, responseText, audioPath, slotKey, slotValue, allFilled, ... }
-   */
-  async processSlotAnswer(userAnswer) {
+  async processSlotAnswer(userAnswer, skipAudio = false) {
     const session = sessionManager.getSession();
     if (!session || session.phase !== 'SLOT_FILLING') {
       return { action: 'ERROR', responseText: 'Sesi tidak aktif.' };
@@ -52,7 +51,10 @@ class SlotFillingEngine {
 
       if (retry.shouldSuggestKeyboard) {
         const responseText = `Maaf, saya kesulitan menangkap ${currentSlotDef.label} bapak/ibu. Silakan gunakan keyboard di layar untuk memasukkannya.`;
-        const audioPath = await ttsService.generateAudio(responseText);
+        let audioPath = null;
+        if (!skipAudio) {
+          audioPath = await ttsService.generateAudio(responseText);
+        }
         sessionManager.addConversation('assistant', responseText);
 
         return {
@@ -68,7 +70,10 @@ class SlotFillingEngine {
 
       // Minta ulang
       const responseText = `${validation.reason}. Boleh diulangi ${currentSlotDef.label}-nya?`;
-      const audioPath = await ttsService.generateAudio(responseText);
+      let audioPath = null;
+      if (!skipAudio) {
+        audioPath = await ttsService.generateAudio(responseText);
+      }
       sessionManager.addConversation('assistant', responseText);
 
       return {
@@ -85,29 +90,32 @@ class SlotFillingEngine {
 
     if (fillResult.allFilled) {
       // Semua slot terisi → lanjut ke konfirmasi
-      return await this._generateConfirmation();
+      return await this._generateConfirmation(skipAudio);
     }
 
     // Masih ada slot → generate pertanyaan berikutnya
-    return await this.askNextSlot();
+    return await this.askNextSlot(skipAudio);
   }
 
   /**
    * Generate pertanyaan untuk slot berikutnya
    * Menggunakan template langsung untuk kecepatan, bukan LLM
    */
-  async askNextSlot() {
+  async askNextSlot(skipAudio = false) {
     const session = sessionManager.getSession();
     const currentSlotDef = sessionManager.getCurrentSlotDef();
 
     if (!currentSlotDef) {
-      return await this._generateConfirmation();
+      return await this._generateConfirmation(skipAudio);
     }
 
     // Jika slot butuh keyboard (NIK), minta keyboard langsung
     if (currentSlotDef.inputMethod === 'keyboard') {
       const responseText = `Silakan masukkan ${currentSlotDef.label} bapak/ibu di layar.`;
-      const audioPath = await ttsService.generateAudio(responseText);
+      let audioPath = null;
+      if (!skipAudio) {
+        audioPath = await ttsService.generateAudio(responseText);
+      }
       sessionManager.addConversation('assistant', responseText);
 
       return {
@@ -122,7 +130,10 @@ class SlotFillingEngine {
 
     // Gunakan template pertanyaan langsung (lebih cepat dari LLM)
     const question = this._getSlotQuestion(currentSlotDef.label);
-    const audioPath = await ttsService.generateAudio(question);
+    let audioPath = null;
+    if (!skipAudio) {
+      audioPath = await ttsService.generateAudio(question);
+    }
     sessionManager.addConversation('assistant', question);
 
     return {
@@ -216,7 +227,7 @@ class SlotFillingEngine {
   /**
    * Generate rangkuman konfirmasi — menggunakan template langsung (tanpa LLM)
    */
-  async _generateConfirmation() {
+  async _generateConfirmation(skipAudio = false) {
     const session = sessionManager.getSession();
     const filledSlots = sessionManager.getFilledSlots();
     const suratLabel = sessionManager.getSuratLabel();
@@ -228,7 +239,10 @@ class SlotFillingEngine {
     const parts = Object.entries(filledSlots).map(([label, value]) => `${label}: ${value}`);
     summary += parts.join(', ') + '. Apakah data sudah benar?';
 
-    const audioPath = await ttsService.generateAudio(summary);
+    let audioPath = null;
+    if (!skipAudio) {
+      audioPath = await ttsService.generateAudio(summary);
+    }
     sessionManager.addConversation('assistant', summary);
 
     return {
