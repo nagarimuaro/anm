@@ -78,7 +78,7 @@
 
 body {
   font-family: var(--font-body);
-  background: url('../../public/assets/background.webp') center center / cover no-repeat fixed;
+  background: #0a0e27;
   color: var(--text-primary);
   min-height: 100vh;
   overflow: hidden;
