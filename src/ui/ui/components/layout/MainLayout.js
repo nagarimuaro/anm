@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const MainLayout = ({ children }) => {
   const navigate = useNavigate();
   const [clock, setClock] = useState('');
+  const videoRef = useRef(null);
 
   useEffect(() => {
     const updateClock = () => {
@@ -16,12 +17,26 @@ const MainLayout = ({ children }) => {
     return () => clearInterval(timer);
   }, []);
 
+  // Smooth loop: seek ke frame 0 sebelum video benar-benar berakhir
+  // agar tidak ada jeda/hitam saat repeat
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const handleTimeUpdate = () => {
+      if (video.duration && video.currentTime >= video.duration - 0.15) {
+        video.currentTime = 0;
+      }
+    };
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    return () => video.removeEventListener('timeupdate', handleTimeUpdate);
+  }, []);
+
   return (
     <div className="app-container">
-      {/* Background Video — MP4 jauh lebih ringan dari GIF */}
+      {/* Background Video — MP4 lebih ringan, smooth loop via JS */}
       <video
+        ref={videoRef}
         autoPlay
-        loop
         muted
         playsInline
         style={{
