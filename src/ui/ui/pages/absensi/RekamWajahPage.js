@@ -23,6 +23,19 @@ function getAvatarColor(nama) {
   return colors[hash % colors.length];
 }
 
+// Deteksi arah kepala berdasarkan landmarks (hidung vs rahang)
+function getHeadPose(landmarks) {
+  const nose = landmarks.getNose()[3];
+  const jaw = landmarks.getJawOutline();
+  const leftJaw = jaw[0];
+  const rightJaw = jaw[16];
+  const leftDist = nose.x - leftJaw.x;
+  const rightDist = rightJaw.x - nose.x;
+  if (leftDist < rightDist * 0.55) return 'turn_left';
+  if (rightDist < leftDist * 0.55) return 'turn_right';
+  return 'center';
+}
+
 const RekamWajahPage = () => {
   const navigate = useNavigate();
   // step: token → select → camera → review → done
@@ -55,6 +68,8 @@ const RekamWajahPage = () => {
   const autoCaptureTimerRef = useRef(null);
   
   const stateRef = useRef({ photos: [], descriptors: [] });
+  // Pause detection saat Sinta sedang bicara — agar foto tidak diambil sebelum instruksi selesai
+  const pauseDetectionUntilRef = useRef(0);
 
   const REQUIRED_PHOTOS = 3;
   const INSTRUCTIONS = [
@@ -164,17 +179,20 @@ const RekamWajahPage = () => {
   const doCapture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
 
-    // Detect using faceapi right before capturing to get the descriptor
     const detection = await faceapi.detectSingleFace(
       videoRef.current, 
       new faceapi.TinyFaceDetectorOptions()
     ).withFaceLandmarks().withFaceDescriptor();
 
     if (!detection) {
-      // Very unlikely since we waited for stability, but handle it
       setAutoCapturing(false);
       return;
     }
+
+    // ✅ Reset SEGERA agar detection loop tidak re-trigger sebelum instruksi diucapkan
+    faceStableRef.current = 0;
+    // Pause deteksi 7 detik — cukup untuk Sinta selesai bicara instruksi berikutnya
+    pauseDetectionUntilRef.current = Date.now() + 7000;
 
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 200);
@@ -222,29 +240,69 @@ const RekamWajahPage = () => {
     faceStableRef.current = 0;
     const STABLE_FRAMES = 8;
 
+    // Ucapkan instruksi pertama saat kamera siap
+    // Pause deteksi 7 detik agar Sinta selesai bicara sebelum auto-capture mulai
+    pauseDetectionUntilRef.current = Date.now() + 7000;
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        'Kamera siap. Kami akan mengambil tiga foto wajah Anda. Pertama, lihat lurus ke kamera.'
+      ).catch(() => {});
+    }
+
     const detectFaces = async () => {
       if (!videoRef.current || step !== 'camera') return;
-      if (stateRef.current.photos.length >= REQUIRED_PHOTOS) return; // done
+      if (stateRef.current.photos.length >= REQUIRED_PHOTOS) return;
+
+      // Jika Sinta sedang bicara, tunda deteksi
+      if (Date.now() < pauseDetectionUntilRef.current) {
+        detectLoopRef.current = requestAnimationFrame(() => setTimeout(detectFaces, 200));
+        return;
+      }
 
       try {
-        const detection = await faceapi.detectSingleFace(
-          videoRef.current, 
-          new faceapi.TinyFaceDetectorOptions()
-        );
+        const photoIdx = stateRef.current.photos.length;
+
+        // Gunakan landmarks untuk foto 2 & 3 (perlu validasi pose)
+        const needsPose = photoIdx === 1 || photoIdx === 2;
+        const detection = needsPose
+          ? await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks()
+          : await faceapi.detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions());
 
         if (detection) {
           setFaceDetected(true);
-          faceStableRef.current++;
-
-          const photoIdx = stateRef.current.photos.length;
           setInstruction(INSTRUCTIONS[photoIdx] || INSTRUCTIONS[0]);
+
+          // Validasi pose sebelum menghitung stable frames
+          if (needsPose) {
+            // Jika landmarks tidak tersedia, JANGAN capture — tunggu frame berikutnya
+            if (!detection.landmarks) {
+              faceStableRef.current = 0;
+              detectLoopRef.current = requestAnimationFrame(() => setTimeout(detectFaces, 200));
+              return;
+            }
+
+            const pose = getHeadPose(detection.landmarks);
+            // Catatan: getHeadPose mengembalikan arah dari sisi KAMERA (non-mirror)
+            // "Menoleh ke kanan" dari sisi USER = turn_left di camera space (mirroring)
+            // "Menoleh ke kiri" dari sisi USER = turn_right di camera space
+            const requiredPose = photoIdx === 1 ? 'turn_left' : 'turn_right';
+            if (pose !== requiredPose) {
+              // Pose belum benar — reset stability, jangan capture
+              faceStableRef.current = 0;
+              detectLoopRef.current = requestAnimationFrame(() => setTimeout(detectFaces, 200));
+              return;
+            }
+          }
+
+          faceStableRef.current++;
 
           if (faceStableRef.current >= STABLE_FRAMES && !autoCaptureTimerRef.current) {
             triggerAutoCapture();
           }
         } else {
           setFaceDetected(false);
-          faceStableRef.current = Math.max(0, faceStableRef.current - 1); // Forgive 1 dropped frame
+          faceStableRef.current = Math.max(0, faceStableRef.current - 1);
 
           if (autoCaptureTimerRef.current && faceStableRef.current <= 0) {
             clearInterval(autoCaptureTimerRef.current);
@@ -264,18 +322,22 @@ const RekamWajahPage = () => {
 
     return () => {
       if (detectLoopRef.current) cancelAnimationFrame(detectLoopRef.current);
-      // We explicitly DO NOT clear autoCaptureTimerRef here so it survives re-renders
     };
   }, [cameraReady, step, modelsLoaded, triggerAutoCapture]);
 
-  // Reset stable count after capture
+  // Ucapkan instruksi berikutnya setelah capture (deteksi sudah di-pause di doCapture)
   useEffect(() => {
     if (photos.length > 0 && photos.length < REQUIRED_PHOTOS) {
-      faceStableRef.current = 0;
       setAutoCapturing(false);
+      const nextInstr = INSTRUCTIONS[photos.length] || '';
       const t = setTimeout(() => {
-        setInstruction(INSTRUCTIONS[photos.length] || '');
-      }, 500);
+        setInstruction(nextInstr);
+        if (electron && nextInstr) {
+          electron.ipcRenderer.invoke('voice:speakOnce',
+            `Foto ${photos.length} berhasil. Sekarang ${nextInstr.toLowerCase()}.`
+          ).catch(() => {});
+        }
+      }, 300);
       return () => clearTimeout(t);
     }
   }, [photos.length]);
@@ -307,6 +369,15 @@ const RekamWajahPage = () => {
 
     setStep('done');
     stopCamera();
+
+    // Ucapkan pesan sukses via Sinta
+    const namaPegawai = selectedPegawai?.nama?.split(/[\s,]+/)[0] || 'pegawai';
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        `Rekam wajah ${namaPegawai} berhasil! Data biometrik telah tersimpan dan siap digunakan untuk absensi.`
+      ).catch(() => {});
+    }
   };
 
   const handleReset = () => {
