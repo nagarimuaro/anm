@@ -1,1 +1,1 @@
-npx webpack --mode development   
+npx webpack --mode development

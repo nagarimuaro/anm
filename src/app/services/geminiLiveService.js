@@ -102,10 +102,15 @@ ATURAN NAVIGASI:
 ATURAN PENGUMPULAN DATA SURAT (SLOT FILLING):
 - Saat mengumpulkan data surat, tanyakan SATU pertanyaan per giliran.
 - Ketika pengguna menjawab pertanyaan data surat, WAJIB panggil tool fill_slot(slot_key, value) SEGERA sebelum merespons secara lisan.
-- Setelah fill_slot dipanggil, lanjutkan tanya slot berikutnya ATAU konfirmasi semua data jika sudah lengkap.
+- Setelah fill_slot dipanggil, lanjutkan tanya slot berikutnya ATAU bacakan ringkasan jika semua data sudah lengkap.
 - PENTING: slot_key harus sesuai dengan nama field yang sedang ditanyakan (contoh: 'nama_usaha', 'keperluan', 'tujuan', 'nama_ahli_waris').
 - Contoh: User bilang 'nama usaha saya Toko Sepatu' → panggil fill_slot(slot_key='nama_usaha', value='Toko Sepatu') lalu konfirmasi.
-- Jangan lewati pemanggilan fill_slot saat user memberikan jawaban.` }] }
+- Jangan lewati pemanggilan fill_slot saat user memberikan jawaban.
+
+ATURAN KONFIRMASI DATA:
+- Setelah SEMUA data terkumpul, bacakan ringkasan semua data yang telah diisi satu per satu dengan ramah.
+- Setelah membacakan, katakan: "Jika ada data yang kurang tepat, silakan tekan ikon pensil ✏️ di samping data tersebut untuk mengubahnya. Jika semua sudah benar, tekan tombol Cetak untuk mencetak surat."
+- JANGAN navigasi atau lakukan aksi apapun setelah konfirmasi — biarkan warga yang memutuskan.` }] }
         },
         callbacks: {
           onopen: () => {
@@ -288,6 +293,25 @@ ATURAN PENGUMPULAN DATA SURAT (SLOT FILLING):
             jenis_surat: session.jenis_surat,
             timestamp: Date.now()
           });
+
+          // Jika semua slot sudah terisi, kirim prompt ke Gemini untuk bacakan ringkasan
+          if (fillResult?.allFilled) {
+            // Susun ringkasan data yang terisi
+            const ringkasan = session.slotDefs
+              .filter(def => session.slots[def.key])
+              .map(def => `${def.label}: ${session.slots[def.key]}`)
+              .join(', ');
+
+            const confirmPrompt = `[SISTEM] Semua data surat telah terkumpul. Ringkasan data: ${ringkasan}. Tolong bacakan semua data ini kepada warga secara ramah dan jelas satu per satu. Setelah selesai, katakan kepada warga: "Jika ada data yang kurang tepat, silakan tekan ikon pensil di samping data yang ingin diubah. Jika semua sudah benar, silakan tekan tombol Cetak Surat."  Jangan lakukan navigasi apapun, biarkan warga yang memutuskan.`;
+
+            try {
+              this.session.sendClientContent({
+                turns: [{ role: 'user', parts: [{ text: confirmPrompt }] }]
+              });
+            } catch (e) {
+              console.error('[GeminiLive] Error sending confirmation prompt:', e);
+            }
+          }
         }
       }
 
