@@ -76,6 +76,10 @@ class KioskService {
             const parsed = JSON.parse(data);
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve(parsed);
+            } else if (res.statusCode === 422) {
+              // 422 = business logic rejection (misal: "sudah absen")
+              // Resolve sebagai { success: false } agar frontend bisa tampilkan pesan yang ramah
+              resolve({ success: false, message: parsed.message || 'Permintaan tidak dapat diproses', statusCode: 422 });
             } else {
               reject(new Error(`Backend error ${res.statusCode}: ${parsed.message || data}`));
             }

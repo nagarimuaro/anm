@@ -68,6 +68,7 @@ const AbsensiPage = () => {
   const [livenessStatus, setLivenessStatus] = useState('waiting'); // waiting, progress, passed
   
   const [identifyProgress, setIdentifyProgress] = useState(0);
+  const [absensiError, setAbsensiError] = useState(null); // pesan error dari API
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -224,9 +225,29 @@ const AbsensiPage = () => {
           electron.ipcRenderer.invoke(action, { pegawai_id: finalPegawai.id, confidence: 0.95 })
             .then(res => {
               setAbsensiTime(timeStr);
+
+              // Cek apakah API mengembalikan success: false (misal: "anda sudah absen")
+              if (res && res.success === false) {
+                const namaDepan = finalPegawai.nama.split(/[\s,]+/)[0] || 'Pegawai';
+                const pesanGagal = res.message
+                  ? `Maaf ${namaDepan}, ${res.message}.`
+                  : `Maaf ${namaDepan}, absensi tidak dapat diproses saat ini.`;
+
+                setAbsensiError(res.message || 'Absensi tidak dapat diproses');
+                setMode('identified'); // Tetap tampilkan profil
+                if (electron) {
+                  electron.ipcRenderer.invoke('voice:speakOnce', pesanGagal).catch(() => {});
+                }
+                autoResetRef.current = setTimeout(() => {
+                  handleReset();
+                  navigate('/');
+                }, 7000);
+                return;
+              }
+
+              // Success: tampilkan profil dan ucapkan sapaan
               setMode('identified');
 
-              // Pesan suara personal berdasarkan check-in atau checkout
               const namaDepan = finalPegawai.nama.split(/[\s,]+/)[0] || 'Pegawai';
               const jamSekarang = now.getHours();
               const sapaanWaktu = jamSekarang < 11 ? 'Selamat pagi' : jamSekarang < 15 ? 'Selamat siang' : 'Selamat sore';
@@ -235,8 +256,6 @@ const AbsensiPage = () => {
                 ? `${sapaanWaktu}, ${namaDepan}! Absensi pulang Anda telah tercatat. Terima kasih atas kerja keras Anda hari ini. Istirahat yang cukup ya, dan sampai jumpa besok! Tetap semangat!`
                 : `${sapaanWaktu}, ${namaDepan}! Absensi masuk Anda telah tercatat. Selamat bekerja, semoga hari ini penuh produktivitas dan menyenangkan!`;
 
-              // Gunakan voice:speakOnce — buka sesi Gemini dedicated agar suara Aoede (Sinta)
-              // konsisten dengan fitur lainnya. Tidak mengganggu sesi voice utama.
               if (electron) {
                 electron.ipcRenderer.invoke('voice:speakOnce', pesanSuara).catch(() => {});
               }
@@ -244,7 +263,7 @@ const AbsensiPage = () => {
               autoResetRef.current = setTimeout(() => {
                 handleReset();
                 navigate('/');
-              }, 10000); // Cukup waktu untuk dengar sapaan Sinta
+              }, 10000);
             })
             .catch(err => {
               console.error('Absensi fail:', err);
@@ -380,6 +399,7 @@ const AbsensiPage = () => {
     setMode('camera');
     setPegawai(null);
     setAbsensiTime(null);
+    setAbsensiError(null);
     setChallenge(null);
     setLivenessStatus('waiting');
     setIdentifyProgress(0);
@@ -406,7 +426,7 @@ const AbsensiPage = () => {
     if (mode === 'camera') return faceDetected ? '🟢 Wajah terdeteksi — memverifikasi...' : 'Arahkan wajah ke kamera untuk absensi';
     if (mode === 'liveness') return '🛡️ Deteksi Keamanan (Liveness)';
     if (mode === 'identifying') return '⏳ Menyelesaikan absensi...';
-    if (mode === 'identified') return '✅ Absensi berhasil dicatat';
+    if (mode === 'identified') return absensiError ? '⚠️ Absensi tidak dapat diproses' : '✅ Absensi berhasil dicatat';
     return '';
   };
 
@@ -529,12 +549,12 @@ const AbsensiPage = () => {
               <h3 className="pegawai-nama">{pegawai.nama}</h3>
               <div className="pegawai-jabatan">{pegawai.jabatan}</div>
 
-              <div className="absensi-time-badge">
+              <div className="absensi-time-badge" style={absensiError ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5' } : {}}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="10" />
                   <polyline points="12 6 12 12 16 14" />
                 </svg>
-                Masuk: {absensiTime}
+                {absensiError ? `⚠️ ${absensiError}` : `Masuk: ${absensiTime}`}
               </div>
 
               <div className="pegawai-detail-card">
