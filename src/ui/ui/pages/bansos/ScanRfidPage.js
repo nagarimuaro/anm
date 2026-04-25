@@ -14,7 +14,7 @@ const ScanRfidPage = () => {
   useEffect(() => {
     // Announce instruction
     if (electron && !isProcessing) {
-      electron.ipcRenderer.invoke('voice:synthesize', 'Silakan tempelkan k t p elektronik Anda pada alat scanner sensor yang menyala.');
+      electron.ipcRenderer.invoke('voice:speakOnce', 'Tempelkan e-KTP Anda pada alat scanner sensor yang menyala di bawah layar.').catch(() => {});
     }
 
     // Always ensure input is focused to catch the HID reader
@@ -56,7 +56,7 @@ const ScanRfidPage = () => {
     setStatusText('Memproses identitas e-KTP...');
 
     if (electron) {
-      electron.ipcRenderer.invoke('voice:synthesize', 'K T P Terdeteksi. Mohon tunggu, sedang mencocokkan pangkalan data sosial.');
+      electron.ipcRenderer.invoke('voice:speakOnce', 'e-KTP terdeteksi. Mohon tunggu, sedang mencocokkan data bantuan sosial.').catch(() => {});
     }
 
     // Wait a brief moment for UX, then navigate to bansos result

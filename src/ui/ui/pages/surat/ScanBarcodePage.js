@@ -14,11 +14,13 @@ const ScanBarcodePage = () => {
 
   const inputRef = useRef(null);
   const fallbackTimer = useRef(null);
+  const hasGreetedRef = useRef(false);
 
   useEffect(() => {
-    // Announce instruction on first mount
-    if (electron && !showManual && scanAttempt === 1) {
-      electron.ipcRenderer.invoke('voice:synthesize', 'Silakan dekatkan barcode resi Anda ke mesin pemindai.');
+    // Announce instruction on first mount only
+    if (electron && !showManual && scanAttempt === 1 && !hasGreetedRef.current) {
+      hasGreetedRef.current = true;
+      electron.ipcRenderer.invoke('voice:speakOnce', 'Silakan dekatkan barcode atau nomor resi Anda ke mesin pemindai.').catch(() => {});
     }
 
     // Always ensure input is focused for the hardware HID scanner
@@ -42,14 +44,14 @@ const ScanBarcodePage = () => {
           setScanAttempt(prev => prev + 1);
           setStatusText(`Percobaan ke-${scanAttempt + 1} dari 3: Posisikan ulang resi Anda.`);
           if (electron) {
-            electron.ipcRenderer.invoke('voice:synthesize', 'Mesin belum mendeteksi resi. Coba posisikan ulang barcode resi Anda ke mesin.');
+            electron.ipcRenderer.invoke('voice:speakOnce', `Mesin belum mendeteksi resi. Coba posisikan ulang barcode resi Anda ke mesin.`).catch(() => {});
           }
         } else {
           // Max attempts reached, reveal manual input
           setShowManual(true);
           setStatusText('Ketik kode resi secara manual di layar.');
           if (electron) {
-            electron.ipcRenderer.invoke('voice:synthesize', 'Anda dapat mengetikkan kode resi secara manual pada layar jika scanner kesulitan membaca.');
+            electron.ipcRenderer.invoke('voice:speakOnce', 'Anda dapat mengetikkan kode resi secara manual pada layar jika scanner kesulitan membaca.').catch(() => {});
           }
         }
       }, 30000); // 30 seconds
@@ -108,15 +110,15 @@ const ScanBarcodePage = () => {
 
       if (electron) {
         if (data.status === 'signed') {
-          electron.ipcRenderer.invoke('voice:synthesize', 'Surat Anda telah ditandatangani secara elektronik oleh Wali Nagari dan sah untuk dicetak. Silakan tekan tombol Cetak Dokumen di layar untuk melanjutkan.');
+          electron.ipcRenderer.invoke('voice:speakOnce', `Surat atas nama ${data.warga_nama || 'Anda'} telah ditandatangani secara elektronik dan sah untuk dicetak. Silakan tekan tombol Cetak Dokumen.`).catch(() => {});
         } else {
-          electron.ipcRenderer.invoke('voice:synthesize', 'Maaf, surat Anda sedang dalam antrean dan belum ditandatangani oleh pemangku Nagari. Mohon cek kembali nanti.');
+          electron.ipcRenderer.invoke('voice:speakOnce', 'Maaf, surat Anda sedang dalam antrean dan belum ditandatangani oleh Wali Nagari. Mohon cek kembali nanti.').catch(() => {});
         }
       }
     } catch (err) {
       setStatusText(`Gagal: ${err.message}`);
       if (electron) {
-        electron.ipcRenderer.invoke('voice:synthesize', 'Kode resi tidak ditemukan atau terjadi kesalahan. Silakan coba lagi.');
+        electron.ipcRenderer.invoke('voice:speakOnce', 'Kode resi tidak ditemukan atau terjadi kesalahan. Silakan coba lagi.').catch(() => {});
       }
     } finally {
       setIsProcessing(false);

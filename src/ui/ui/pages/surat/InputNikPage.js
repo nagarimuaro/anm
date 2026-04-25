@@ -3,7 +3,7 @@
  * 
  * Flow: Input NIK (16 digit) → OK → Profil Warga
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const electron = window.require ? window.require('electron') : null;
@@ -17,6 +17,19 @@ const InputNikPage = () => {
   const nextPath = location.state?.nextPath || '/profil-warga';
   const slotKey = location.state?.slotKey;
   const fromVoice = location.state?.fromVoice;
+  const hasGreetedRef = useRef(false);
+
+  // Sambutan saat halaman dibuka
+  useEffect(() => {
+    if (hasGreetedRef.current || fromVoice) return; // jangan ganggu jika dari voice AI
+    hasGreetedRef.current = true;
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        'Silakan masukkan 16 digit Nomor Induk Kependudukan Anda menggunakan keypad di layar.'
+      ).catch(() => {});
+    }
+  }, []);
 
   const handleKeyPress = async (key) => {
     if (key === 'OK') {

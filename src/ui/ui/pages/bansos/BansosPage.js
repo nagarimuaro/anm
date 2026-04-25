@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const electron = window.require ? window.require('electron') : null;
@@ -9,6 +9,19 @@ const BansosPage = () => {
   const nik = location.state?.nik;
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const hasGreetedRef = useRef(false);
+
+  // Sambutan saat halaman dibuka
+  useEffect(() => {
+    if (hasGreetedRef.current) return;
+    hasGreetedRef.current = true;
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        'Silakan tunggu, kami sedang memproses data bantuan sosial Anda.'
+      ).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     const checkBansos = async () => {
@@ -49,11 +62,10 @@ const BansosPage = () => {
 
   useEffect(() => {
     if (!loading && status && electron) {
-      if (status.terdaftar) {
-        electron.ipcRenderer.invoke('voice:synthesize', `Selamat. E-KTP atas nama ${status.nama} terdaftar sebagai penerima multimanfaat bantuan sosial, di antaranya Program Harapan Keluarga dan Bantuan Langsung Tunai. Rincian dapat dilihat pada layar.`);
-      } else {
-        electron.ipcRenderer.invoke('voice:synthesize', `Maaf. Kamu belum terdaftar sebagai penerima manfaat. Terima kasih sudah menggunakan Layanan A N M.`);
-      }
+      const pesan = status.terdaftar
+        ? `Selamat, ${status.nama}! E-KTP Anda terdaftar sebagai penerima bantuan sosial. Anda menerima ${status.bantuan?.length || 0} jenis bantuan. Rincian dapat dilihat pada layar.`
+        : `Maaf, ${status.nama}. Data Anda belum terdaftar sebagai penerima bantuan sosial pada periode ini. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri.`;
+      electron.ipcRenderer.invoke('voice:speakOnce', pesan).catch(() => {});
     }
   }, [loading, status]);
 

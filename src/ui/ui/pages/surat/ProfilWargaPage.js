@@ -72,32 +72,14 @@ const ProfilWargaPage = () => {
     };
     fetchWarga();
   }, [nik]);
-  // TTS: announce profile — ONLY ONCE
-  // Announce profile via voice
+  // Ucapkan profil warga saat data tersedia — gunakan speakOnce konsisten
   useEffect(() => {
-
     if (!warga || !electron || hasSynthesized.current) return;
     hasSynthesized.current = true;
-    if (fromVoice) {
-      // Kirim data ke Gemini Live agar AI yang validasi dengan suaranya sendiri
-      const tglLahir = warga.tanggal_lahir
-        ? new Date(warga.tanggal_lahir).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-        : '-';
-      const prompt = `[SISTEM] Data warga ditemukan dari database. Tolong bacakan dan validasikan data berikut kepada warga dengan ramah:
-Nama: ${warga.nama}
-Tanggal Lahir: ${tglLahir}
-Alamat: ${warga.alamat || '-'}
-Pekerjaan: ${warga.pekerjaan || '-'}
-Status: ${warga.status_kawin || '-'}
-Setelah membacakan data, tanyakan apakah data sudah benar dan minta warga menekan tombol Lanjut untuk memilih jenis surat.`;
-      electron.ipcRenderer.invoke('voice:sendToGemini', prompt);
-    } else {
-      // Fallback TTS jika tidak dari voice
-      electron.ipcRenderer.invoke('voice:synthesize',
-        `Data ditemukan atas nama ${warga.nama}. Silakan periksa data anda, lalu tekan tombol lanjut.`
-      );
-    }
-  }, [warga, fromVoice]);
+    const pesan = `Data ditemukan atas nama ${warga.nama}. Silakan periksa data Anda pada layar, lalu tekan tombol Lanjut untuk memilih jenis surat.`;
+    electron.ipcRenderer.invoke('voice:speakOnce', pesan).catch(() => {});
+  }, [warga]);
+
   const handleLanjut = () => {
     // Masuk ke manual mode — matikan AI processing di background
     if (!fromVoice && electron) {

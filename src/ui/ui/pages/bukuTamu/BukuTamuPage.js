@@ -1,24 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+const electron = window.require ? window.require('electron') : null;
 
 const BukuTamuPage = () => {
   const navigate = useNavigate();
   const [nama, setNama] = useState('');
   const [tujuan, setTujuan] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const hasGreetedRef = useRef(false);
+
+  // Sambutan saat halaman dibuka
+  useEffect(() => {
+    if (hasGreetedRef.current) return;
+    hasGreetedRef.current = true;
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        'Silakan isi nama lengkap dan tujuan kunjungan Anda, kemudian tekan tombol Simpan.'
+      ).catch(() => {});
+    }
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log('Menyimpan buku tamu:', { nama, tujuan });
     setSubmitted(true);
-    setTimeout(() => navigate('/'), 3000);
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        `Terima kasih, ${nama}! Kunjungan Anda telah berhasil dicatat. Semoga urusan Anda di Nagari berjalan lancar. Sampai jumpa!`
+      ).catch(() => {});
+    }
+    setTimeout(() => navigate('/'), 7000);
   };
 
   if (submitted) {
     return (
       <div className="page-enter" style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-        <h2 className="page-title">Terima Kasih</h2>
+        <h2 className="page-title">Terima Kasih, {nama}!</h2>
         <p className="page-subtitle">Kunjungan Anda telah dicatat.</p>
       </div>
     );

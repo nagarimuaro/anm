@@ -39,37 +39,19 @@ const PrintingPage = () => {
 
     const speakFarewell = async () => {
       if (!electron) return;
-
-      // Tunggu sebentar agar halaman render dulu
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 600));
 
       const nama = warga?.nama ? warga.nama.split(' ')[0] : 'ya';
       const farewellText = resi && resi !== 'RESI-UNIK'
         ? `Pengajuan surat Anda telah berhasil, ${nama}! Nomor resi Anda adalah ${resi.replace(/-/g, ' ')}. Silakan simpan atau foto nomor resi tersebut. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Sampai jumpa!`
         : `Pengajuan surat Anda telah berhasil, ${nama}! Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Semoga urusan Anda lancar. Sampai jumpa!`;
 
-      // Kirim ke Gemini Live (agar suara konsisten dengan sesi AI)
-      try {
-        const sent = await electron.ipcRenderer.invoke('voice:sendToGemini',
-          `[SISTEM] Halaman cetak/hasil pengajuan telah terbuka. Tolong ucapkan pesan perpisahan berikut kepada warga dengan hangat dan ramah: "${farewellText}" Setelah selesai berbicara, sesi ini berakhir.`
-        );
-        // Jika Gemini tidak aktif (manual mode), fallback ke TTS biasa
-        if (!sent?.success) {
-          electron.ipcRenderer.invoke('voice:synthesize', farewellText);
-        }
-      } catch {
-        electron.ipcRenderer.invoke('voice:synthesize', farewellText);
-      }
-
-      // Matikan mic setelah Sinta selesai bicara farewell (~12 detik)
-      // enterManualMode = tutup WebSocket Gemini + kirim sinyal ke frontend agar mic hardware mati
-      setTimeout(() => {
-        electron.ipcRenderer.invoke('voice:enterManualMode').catch(() => {});
-      }, 12000);
+      electron.ipcRenderer.invoke('voice:speakOnce', farewellText).catch(() => {});
     };
 
     speakFarewell();
   }, []);
+
 
   useEffect(() => {
     if (hasSynthesized.current) return;
