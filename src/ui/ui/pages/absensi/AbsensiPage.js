@@ -223,16 +223,26 @@ const AbsensiPage = () => {
             .then(res => {
               setAbsensiTime(timeStr);
               setMode('identified');
-              
-              const statusText = isCheckout ? 'pulang' : 'masuk';
-              electron.ipcRenderer.invoke('voice:synthesize',
-                `Selamat, ${finalPegawai.nama.split(',')[0] || 'Pegawai'}. Absensi ${statusText} Anda telah tercatat.`
-              );
+
+              // Pesan suara personal berdasarkan check-in atau checkout
+              const namaDepan = finalPegawai.nama.split(/[\s,]+/)[0] || 'Pegawai';
+              const jamSekarang = now.getHours();
+              const sapaanWaktu = jamSekarang < 11 ? 'Selamat pagi' : jamSekarang < 15 ? 'Selamat siang' : 'Selamat sore';
+
+              const pesanSuara = isCheckout
+                ? `${sapaanWaktu}, ${namaDepan}! Absensi pulang Anda telah tercatat. Terima kasih atas kerja keras Anda hari ini. Istirahat yang cukup ya, dan sampai jumpa besok! Tetap semangat!`
+                : `${sapaanWaktu}, ${namaDepan}! Absensi masuk Anda telah tercatat. Selamat bekerja, semoga hari ini penuh produktivitas dan menyenangkan!`;
+
+              // Gunakan voice:speakOnce — buka sesi Gemini dedicated agar suara Aoede (Sinta)
+              // konsisten dengan fitur lainnya. Tidak mengganggu sesi voice utama.
+              if (electron) {
+                electron.ipcRenderer.invoke('voice:speakOnce', pesanSuara).catch(() => {});
+              }
 
               autoResetRef.current = setTimeout(() => {
                 handleReset();
                 navigate('/');
-              }, 4000);
+              }, 10000); // Cukup waktu untuk dengar sapaan Sinta
             })
             .catch(err => {
               console.error('Absensi fail:', err);

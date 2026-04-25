@@ -232,11 +232,8 @@ export default function useVoiceSession(disableMic = false) {
         await playbackCtxRef.current.resume();
       }
       if (!audioListenerRegistered.current && electron) {
-        electron.ipcRenderer.on('voice:audio_stream', (event, data) => {
-          if (data && data.audioData) {
-            queuePCMChunk(data.audioData);
-          }
-        });
+        // Listener dipindah ke useEffect permanen di bawah agar speakOnce juga bisa memutar audio
+        // tanpa perlu activate() terlebih dahulu
         audioListenerRegistered.current = true;
       }
     }
@@ -352,12 +349,29 @@ export default function useVoiceSession(disableMic = false) {
           await openMic(); // Baru mulai merekam setelah beep
         }
         setIsListening(true);
+
+        // Kirim prompt sambutan ke Gemini agar Sinta langsung menyapa warga
+        if (electron) {
+          electron.ipcRenderer.invoke('voice:sendToGemini',
+            '[SISTEM] Kamu baru saja terhubung. Berikan sambutan yang hangat, singkat, dan ceria kepada warga. Perkenalkan dirimu sebagai Sinta. Tanyakan dengan ramah: ada yang bisa Sinta bantu hari ini?'
+          ).catch(() => {});
+        }
       } else if (data.state === 'LISTENING' || data.state === 'BUFFERING') {
         setIsListening(true);
         setIsProcessing(false);
       } else if (data.state === 'TRANSCRIBING' || data.state === 'PROCESSING') {
         setIsListening(false);
         setIsProcessing(true);
+      } else if (data.state === 'SPEAKING') {
+        // speakOnce mode — hanya putar audio, TIDAK buka mic atau kirim greeting
+        // Pastikan AudioContext diinisialisasi agar audio bisa diputar
+        if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
+          playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+          nextPlayTimeRef.current = 0;
+        }
+        if (playbackCtxRef.current.state === 'suspended') {
+          playbackCtxRef.current.resume().catch(() => {});
+        }
       } else if (data.state === 'STANDBY' || data.state === 'MANUAL_MODE') {
         setIsListening(false);
         setIsProcessing(false);
@@ -378,6 +392,11 @@ export default function useVoiceSession(disableMic = false) {
     electron.ipcRenderer.on('voice:stateChange', handleStateChange);
     electron.ipcRenderer.on('session:update', handleSessionUpdate);
     electron.ipcRenderer.on('voice:error', handleError);
+    // Selalu listen audio_stream agar speakOnce juga bisa memutar audio tanpa activate()
+    const handleAudioStream = (event, data) => {
+      if (data && data.audioData) queuePCMChunk(data.audioData);
+    };
+    electron.ipcRenderer.on('voice:audio_stream', handleAudioStream);
 
     return () => {
       electron.ipcRenderer.removeListener('voice:transcript', handleTranscript);
@@ -386,8 +405,9 @@ export default function useVoiceSession(disableMic = false) {
       electron.ipcRenderer.removeListener('voice:stateChange', handleStateChange);
       electron.ipcRenderer.removeListener('session:update', handleSessionUpdate);
       electron.ipcRenderer.removeListener('voice:error', handleError);
+      electron.ipcRenderer.removeListener('voice:audio_stream', handleAudioStream);
     };
-  }, [playAudio]);
+  }, [playAudio, queuePCMChunk]);
 
   // Audio onended handler
   useEffect(() => {

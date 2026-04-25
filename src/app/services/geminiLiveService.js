@@ -172,6 +172,72 @@ ATURAN KONFIRMASI DATA:
     }
   }
 
+  /**
+   * speakOnce — Sesi Gemini khusus untuk TTS one-shot (absensi, notifikasi)
+   * Emit state 'SPEAKING' bukan 'CONNECTED', agar useVoiceSession tidak buka mic/greeting.
+   * Auto-disconnect setelah timeout.
+   */
+  async speakOnce(text, timeoutMs = 10000) {
+    console.log('🔊 speakOnce:', text.substring(0, 60) + '...');
+    // Jika sudah ada sesi aktif, gunakan saja
+    if (this.session) {
+      try {
+        this.session.sendClientContent({
+          turns: [{ role: 'user', parts: [{ text: `[SISTEM] Ucapkan kalimat berikut persis seperti adanya, hangat dan ramah, tanpa tambahan kata lain: "${text}"` }] }]
+        });
+      } catch (e) { console.error('speakOnce on existing session error:', e); }
+      return;
+    }
+    const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-8b';
+    let speakSession = null;
+    const pendingText = `[SISTEM] Ucapkan persis dengan hangat dan ramah, tanpa tambahan: "${text}"`;
+    try {
+      speakSession = await this.ai.live.connect({
+        model: modelName,
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
+          systemInstruction: { parts: [{ text: 'Kamu adalah asisten Sinta. Ucapkan persis apa yang diminta sistem.' }] }
+        },
+        callbacks: {
+          onopen: () => {
+            console.log('🔊 speakOnce connected OK');
+            this._emitResponse({ type: 'stateChange', state: 'SPEAKING' });
+          },
+          onmessage: (e) => {
+            if (e.serverContent) this._handleContent(e.serverContent);
+          },
+          onclose: (e) => { console.log(`🔊 speakOnce closed. Code: ${e?.code}, Reason: "${e?.reason}"`); },
+          onerror: (err) => console.error('speakOnce error:', err)
+        }
+      });
+
+      // Tambahkan turnComplete:true agar Gemini tahu user turn selesai dan harus merespons
+      console.log('🔊 Sending content to speakOnce session...');
+
+      // Gemini Live butuh audio context untuk menghasilkan audio output.
+      // Kirim beberapa frame audio senyap (silent) untuk membuka audio stream, 
+      // lalu kirim teks. Ini meniru perilaku main session yang punya mic aktif.
+      const silentFrame = Buffer.alloc(320, 0); // 160 samples @ 16kHz = 10ms silence
+      for (let i = 0; i < 5; i++) {
+        speakSession.sendRealtimeInput({
+          audio: { data: silentFrame.toString('base64'), mimeType: 'audio/pcm;rate=16000' }
+        });
+      }
+
+      // Tunggu sebentar agar audio context terbuka, lalu kirim teks
+      await new Promise(r => setTimeout(r, 200));
+      speakSession.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text: pendingText }] }],
+        turnComplete: true
+      });
+
+      setTimeout(() => { try { speakSession.close(); } catch (_) {} }, timeoutMs);
+    } catch (err) {
+      console.error('speakOnce connect error:', err);
+    }
+  }
+
   // (Legacy) Frontend mengirim chunk audio sebagai Buffer
   processAudioChunk(chunk) {
     if (!this.session) return;
@@ -231,19 +297,25 @@ ATURAN KONFIRMASI DATA:
         if (part.inlineData && part.inlineData.data) {
           this._emitResponse({
             type: 'audio_stream',
-            audioData: part.inlineData.data // base64 PCM 24kHz
+            audioData: part.inlineData.data
           });
         }
-        if (content.outputTranscription) {
-          console.log('🗣️ Gemini:', content.outputTranscription.text);
+        if (part.text) {
+          console.log('🗣️ Gemini:', part.text);
         }
       });
+    }
+    if (content.outputTranscription) {
+      console.log('🗣️ Gemini:', content.outputTranscription.text);
     }
     if (content.inputTranscription) {
       console.log('🎤 User:', content.inputTranscription.text);
     }
     if (content.interrupted) {
       console.log('⏸️ Gemini interrupted');
+    }
+    if (content.turnComplete) {
+      console.log('🏁 Turn Complete (Sesi Gemini Selesai Bicara)');
     }
   }
 

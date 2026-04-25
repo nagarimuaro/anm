@@ -25,6 +25,7 @@ function register(ipc, mainWindow) {
           // Streaming interim transcript — kata per kata real-time
           mainWindow.webContents.send('voice:interim', { text: data.text });
         } else if (data.type === 'audio_stream') {
+          console.log(`🔉 [VC] Forwarding audio_stream to renderer, size: ${data.audioData?.length}`);
           mainWindow.webContents.send('voice:audio_stream', data);
         } else if (data.type === 'stateChange') {
           mainWindow.webContents.send('voice:stateChange', data);
@@ -176,6 +177,18 @@ function register(ipc, mainWindow) {
       return { success: true };
     } catch (e) {
       console.error('Enter manual mode error:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // TTS one-shot via Gemini Aoede — untuk absensi, notifikasi, dsb.
+  // Membuka sesi Gemini dedicated, speak, lalu auto-close. Tidak mengganggu sesi utama.
+  ipc.handle('voice:speakOnce', async (event, text) => {
+    try {
+      await voiceService.speakOnce(text);
+      return { success: true };
+    } catch (e) {
+      console.error('voice:speakOnce error:', e);
       return { success: false, error: e.message };
     }
   });

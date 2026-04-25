@@ -29,6 +29,10 @@ const deviceService = require('../infrastructure/device/deviceService');
 
 let mainWindow;
 
+// Izinkan AudioContext tanpa user gesture — diperlukan untuk absensi (face recognition)
+// dan speakOnce yang dipanggil secara programatik bukan dari klik user
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 // Audio server disabled (EdgeTTS not used)
 function startAudioServer() {
   console.log('[AudioServer] Disabled for debugging.');
@@ -46,6 +50,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 

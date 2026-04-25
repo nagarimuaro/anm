@@ -679,11 +679,13 @@ const SuratPage = () => {
                 onClick={async () => {
                   if (electron) {
                     try {
-                      await electron.ipcRenderer.invoke('voice:enterManualMode');
-                      
+                      // JANGAN panggil enterManualMode di sini!
+                      // Gemini harus tetap aktif agar bisa bicara farewell di PrintingPage.
+                      // enterManualMode akan dipanggil otomatis oleh PrintingPage setelah 12 detik.
+
                       // Temukan template ID
                       const templateObj = templates.find(t => t.nama === selectedSurat);
-                      
+
                       const submitData = {
                         nik: nik,
                         template_id: templateObj ? templateObj.id : null,
@@ -692,9 +694,9 @@ const SuratPage = () => {
                       };
 
                       const result = await electron.ipcRenderer.invoke('kiosk:api:buatSurat', submitData);
-                      
+
                       if (result && (result.status === 'success' || result.success)) {
-                        navigate('/printing', { state: { result: { ...sessionData, receipt: result }, warga } });
+                        navigate('/printing', { state: { result: { ...sessionData, receipt: result }, warga, fromVoice } });
                       } else {
                         alert('Gagal memproses surat: ' + (result?.pesan || result?.message || 'Terjadi kesalahan'));
                       }
