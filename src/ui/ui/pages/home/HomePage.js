@@ -72,10 +72,12 @@ const HomePage = () => {
       display: 'flex', 
       flexDirection: 'column', 
       alignItems: 'center', 
-      justifyContent: 'center',
+      justifyContent: 'flex-end',
       width: '100%', 
       height: '100%',
-      gap: '40px'
+      gap: '0',
+      position: 'relative',
+      overflow: 'hidden'
     }}>
       {/* Added dynamic CSS animation for update pulse */}
       <style>{`
@@ -130,7 +132,7 @@ const HomePage = () => {
             <h2 style={{ fontSize: '26px', color: 'var(--text-primary)', fontFamily: 'var(--font-heading)' }}>
               Pembaruan Sistem v{updateInfo.version}
             </h2>
-            <div style={{ color: 'var(--text-secondary)', lineHeight: '1.6', background: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '12px', textAlign: 'left' }}>
+            <div style={{ color: 'var(--text-secondary)', lineHeight: '1.6', background: 'var(--bg-glass)', padding: '20px', borderRadius: '12px', textAlign: 'left' }}>
               <p style={{ marginBottom: '8px', fontWeight: 600, color: 'var(--text-primary)' }}>Catatan Rilis:</p>
               <p style={{ fontSize: '15px' }}>{updateInfo.changelog || 'Perbaikan stabilitas dan kecepatan sistem.'}</p>
             </div>
@@ -184,14 +186,42 @@ const HomePage = () => {
         </div>
       )}
 
-      {/* Services Grid — 3 columns */}
+
+      {/* SINTA Character — Fixed agar tidak terpotong overflow container */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        pointerEvents: 'none',
+        animation: 'fadeSlideUp 0.8s ease 0.1s both',
+        zIndex: 0,
+      }}>
+        <img
+          src="/assets/karakter/SINTA.png"
+          alt="Sinta"
+          style={{
+            height: '110vh',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 20px 48px rgba(0,0,0,0.4))',
+          }}
+        />
+      </div>
+
+      {/* Services Grid — 4 columns */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
         gap: '20px',
         width: '100%',
         maxWidth: '1000px',
-        padding: '0 20px', marginTop: 'auto', marginBottom: '60px'
+        padding: '0 20px',
+        marginBottom: '40px',
+        position: 'relative',
+        zIndex: 1,
       }}>
         {menuItems.map((item, i) => (
           <div 
@@ -212,8 +242,8 @@ const HomePage = () => {
               width: '80px',
               height: '80px',
               borderRadius: '50%',
-              background: `linear-gradient(135deg, ${item.color}20, ${item.color}05)`,
-              border: `1px solid ${item.color}40`,
+              background: `linear-gradient(135deg, ${item.color}50, ${item.color}30)`,
+              border: `1px solid ${item.color}70`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -227,13 +257,13 @@ const HomePage = () => {
               <h3 style={{ 
                 fontFamily: 'var(--font-heading)',
                 fontSize: '18px',
-                fontWeight: 600,
-                color: 'var(--text-primary)',
+                fontWeight: 700,
+                color: '#0f172a',
                 marginBottom: '8px'
               }}>{item.title}</h3>
               <p style={{ 
                 fontSize: '13px', 
-                color: 'var(--text-secondary)',
+                color: '#374151',
                 lineHeight: '1.4'
               }}>{item.desc}</p>
             </div>

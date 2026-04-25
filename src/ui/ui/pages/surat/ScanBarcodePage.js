@@ -151,7 +151,7 @@ const ScanBarcodePage = () => {
               </div>
               <h3 style={{ fontSize: '20px', color: 'var(--text-primary)', marginBottom: '8px' }}>Detail Dokumen</h3>
               
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '16px', borderRadius: '12px', textAlign: 'left', marginBottom: '24px' }}>
+              <div style={{ background: 'var(--bg-glass)', padding: '16px', borderRadius: '12px', textAlign: 'left', marginBottom: '24px' }}>
                 <p style={{ margin: '0 0 8px', color: 'var(--text-secondary)', fontSize: '13px' }}>Jenis Dokumen</p>
                 <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>{documentData.type}</p>
                 
@@ -287,7 +287,7 @@ const ScanBarcodePage = () => {
                       width: '100%',
                       padding: '14px',
                       borderRadius: 'var(--radius-md)',
-                      background: 'rgba(0,0,0,0.2)',
+                      background: 'var(--bg-glass)',
                       border: '1px solid rgba(255,255,255,0.1)',
                       color: 'white',
                       fontSize: '18px',

@@ -18,7 +18,7 @@ module.exports = {
         use: {
           loader: 'babel-loader',
           options: {
-            presets: ['@babel/preset-env', ['@babel/preset-react', {"runtime": "automatic"}]]
+            presets: ['@babel/preset-env', ['@babel/preset-react', { "runtime": "automatic" }]]
           }
         },
       },
@@ -27,7 +27,7 @@ module.exports = {
         use: ['style-loader', 'css-loader'],
       },
       {
-        test: /\.(png|jpe?g|gif|webp|svg)$/i,
+        test: /\.(png|jpe?g|gif|webp|svg|mp4)$/i,
         type: 'asset/resource',
       },
     ],

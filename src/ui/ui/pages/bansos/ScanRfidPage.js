@@ -114,7 +114,7 @@ const ScanRfidPage = () => {
              <div style={{ width: '30%', height: '100%', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', marginRight: '10px' }}></div>
              {/* Text lines placeholder */}
              <div style={{ width: '60%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ height: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '2px', width: '100%' }}></div>
+                <div style={{ height: '8px', background: 'var(--bg-glass)', borderRadius: '2px', width: '100%' }}></div>
                 <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '80%', marginTop: '4px' }}></div>
                 <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '90%' }}></div>
                 <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '60%' }}></div>

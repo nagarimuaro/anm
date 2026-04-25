@@ -283,7 +283,7 @@ const SuratPage = () => {
           border: '1px solid rgba(255,255,255,0.05)',
           marginBottom: 40,
           textAlign: 'left',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+          boxShadow: '0 8px 32px var(--bg-glass)'
         }}>
           <div style={{
             width: 80, height: 80, borderRadius: '50%', 

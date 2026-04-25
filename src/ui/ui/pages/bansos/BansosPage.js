@@ -137,7 +137,7 @@ const BansosPage = () => {
               <h4 style={{ color: 'white', marginBottom: '16px', fontSize: '15px' }}>Rincian Bantuan yang Diterima:</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {status.bantuan.map((item, idx) => (
-                  <div key={idx} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
+                  <div key={idx} style={{ background: 'var(--bg-glass)', padding: '12px', borderRadius: '8px', borderLeft: '4px solid #10b981' }}>
                     <div style={{ fontWeight: 'bold', color: 'white', fontSize: '14px', marginBottom: '4px' }}>{item.jenis}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                       <span style={{ color: '#10b981', fontWeight: 600 }}>{item.detail}</span>
