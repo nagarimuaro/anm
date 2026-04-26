@@ -100,17 +100,21 @@ const ScanBarcodePage = () => {
 
       setDocumentData({
         code: data.tracking_code || code,
-        type: data.template_name || 'Surat Keterangan',
+        type: data.template_nama || data.template_name || 'Surat Keterangan',
         name: data.warga_nama || 'Pemohon',
         date: new Date().toLocaleDateString('id-ID'),
-        status_signed: data.status === 'signed',
+        status_signed: data.status_raw === 'signed',
+        status_raw: data.status_raw || 'pending',
+        status_label: data.status || 'Menunggu Review',
         pdf_url: data.pdf_url || null,
       });
       setStatusText('Hasil Pengecekan Dokumen');
 
       if (electron) {
-        if (data.status === 'signed') {
+        if (data.status_raw === 'signed') {
           electron.ipcRenderer.invoke('voice:speakOnce', `Surat atas nama ${data.warga_nama || 'Anda'} telah ditandatangani secara elektronik dan sah untuk dicetak. Silakan tekan tombol Cetak Dokumen.`).catch(() => {});
+        } else if (data.status_raw === 'wali_review') {
+          electron.ipcRenderer.invoke('voice:speakOnce', `Surat atas nama ${data.warga_nama || 'Anda'} sedang dalam proses tanda tangan Wali Nagari. Mohon tunggu beberapa saat.`).catch(() => {});
         } else {
           electron.ipcRenderer.invoke('voice:speakOnce', 'Maaf, surat Anda sedang dalam antrean dan belum ditandatangani oleh Wali Nagari. Mohon cek kembali nanti.').catch(() => {});
         }
@@ -159,8 +163,11 @@ const ScanBarcodePage = () => {
                 <p style={{ margin: '0 0 16px', fontWeight: 'bold' }}>{documentData.name}</p>
 
                 <p style={{ margin: '0 0 8px', color: 'var(--text-secondary)', fontSize: '13px' }}>Status Pengesahan (E-Sign)</p>
-                <p style={{ margin: 0, fontWeight: 'bold', color: documentData.status_signed ? '#10b981' : '#f87171' }}>
-                  {documentData.status_signed ? 'Sudah Ditandatangani (Sah)' : 'Menunggu Tanda Tangan Wali Nagari'}
+                <p style={{ margin: 0, fontWeight: 'bold', color: 
+                  documentData.status_raw === 'signed' ? '#10b981' : 
+                  documentData.status_raw === 'wali_review' ? '#a78bfa' : '#f87171' 
+                }}>
+                  {documentData.status_label || (documentData.status_signed ? 'Sudah Ditandatangani (Sah)' : 'Menunggu Tanda Tangan Wali Nagari')}
                 </p>
               </div>
 
@@ -184,12 +191,14 @@ const ScanBarcodePage = () => {
                 </button>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <p style={{ color: '#f87171', fontSize: '14px', margin: 0 }}>
-                    Dokumen yang belum ditandatangani tidak bisa dicetak.
+                  <p style={{ color: documentData.status_raw === 'wali_review' ? '#a78bfa' : '#f87171', fontSize: '14px', margin: 0 }}>
+                    {documentData.status_raw === 'wali_review' 
+                      ? 'Surat sedang menunggu tanda tangan Wali Nagari.' 
+                      : 'Dokumen yang belum ditandatangani tidak bisa dicetak.'}
                   </p>
                   <button 
                     className="btn btn-outline" 
-                    style={{ width: '100%', borderColor: '#ef4444', color: '#ef4444', padding: '14px' }}
+                    style={{ width: '100%', borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', padding: '14px' }}
                     onClick={() => navigate('/')}
                   >
                     Kembali ke Beranda

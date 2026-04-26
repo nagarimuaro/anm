@@ -23,6 +23,9 @@ const PrintingPage = () => {
   const qrBase64 = dataResi.tracking_qr_base64 || dataResi.qr_base64 || null;
   const safeQrSrc = getSafeImageSrc(qrBase64);
 
+  // Jika ada pdf_url → surat sudah ditandatangani, langsung cetak tanpa tampilkan QR/resi
+  const isSignedDoc = !!pdfUrl;
+
   const [isDone, setIsDone] = useState(false);
   const [printStatus, setPrintStatus] = useState('idle'); // idle | downloading | printing | done | error
   const [printError, setPrintError] = useState('');
@@ -42,9 +45,11 @@ const PrintingPage = () => {
       await new Promise(r => setTimeout(r, 600));
 
       const nama = warga?.nama ? warga.nama.split(' ')[0] : 'ya';
-      const farewellText = resi && resi !== 'RESI-UNIK'
-        ? `Pengajuan surat Anda telah berhasil, ${nama}! Nomor resi Anda adalah ${resi.replace(/-/g, ' ')}. Silakan simpan atau foto nomor resi tersebut. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Sampai jumpa!`
-        : `Pengajuan surat Anda telah berhasil, ${nama}! Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Semoga urusan Anda lancar. Sampai jumpa!`;
+      const farewellText = isSignedDoc
+        ? `Surat Anda sedang dicetak, ${nama}! Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Sampai jumpa!`
+        : resi && resi !== 'RESI-UNIK'
+          ? `Pengajuan surat Anda telah berhasil, ${nama}! Nomor resi Anda adalah ${resi.replace(/-/g, ' ')}. Silakan simpan atau foto nomor resi tersebut. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Sampai jumpa!`
+          : `Pengajuan surat Anda telah berhasil, ${nama}! Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri. Semoga urusan Anda lancar. Sampai jumpa!`;
 
       electron.ipcRenderer.invoke('voice:speakOnce', farewellText).catch(() => {});
     };
@@ -59,21 +64,19 @@ const PrintingPage = () => {
 
     const runPrint = async () => {
       if (pdfUrl && electron) {
-        // Ada PDF dari server — download dan print
+        // Ada PDF dari server — download dan langsung cetak
         setPrintStatus('downloading');
         if (electron) {
           electron.ipcRenderer.invoke('voice:synthesize', 'Mohon tunggu, mengunduh dokumen dari server.');
         }
 
         try {
-          // Download PDF via fetch, simpan via IPC, lalu buka
           const response = await fetch(pdfUrl);
           if (!response.ok) throw new Error(`Server error ${response.status}`);
 
           const buffer = await response.arrayBuffer();
           const uint8Array = new Uint8Array(buffer);
 
-          // Kirim ke Main Process untuk disimpan dan dibuka/dicetak
           setPrintStatus('printing');
           const printResult = await electron.ipcRenderer.invoke('kiosk:printPdf', {
             data: Array.from(uint8Array),
@@ -82,10 +85,11 @@ const PrintingPage = () => {
 
           if (printResult && printResult.success) {
             setPrintStatus('done');
-            setIsDone(true);
+            // Surat sudah ditandatangani — langsung kembali ke home tanpa tampilkan QR/resi
             electron.ipcRenderer.invoke('voice:synthesize',
-              `Surat telah dicetak. Kode resi Anda adalah ${resi}. Silakan ambil dokumen Anda. Mesin akan kembali ke layar utama.`
+              `Surat berhasil dicetak. Silakan ambil dokumen Anda dari printer. Mesin akan kembali ke layar utama.`
             );
+            setTimeout(() => navigate('/'), 5000);
           } else {
             throw new Error(printResult?.message || 'Gagal mencetak dokumen');
           }
@@ -96,14 +100,13 @@ const PrintingPage = () => {
           if (electron) {
             electron.ipcRenderer.invoke('voice:synthesize', 'Maaf, terjadi kesalahan saat mencetak. Silakan hubungi petugas.');
           }
-          return; // Jangan auto-navigate jika error
+          return;
         }
       } else {
-        // Tidak ada pdf_url — cetak struk resi
+        // Tidak ada pdf_url — pengajuan baru, cetak struk resi
         setPrintStatus('printing');
         if (electron) {
           electron.ipcRenderer.invoke('voice:synthesize', 'Pengajuan surat Anda telah berhasil. Struk resi sedang dicetak. Mohon tunggu.');
-          // Minta backend print resi/QR
           electron.ipcRenderer.invoke('kiosk:printReceipt', {
             resi: resi,
             qrBase64: qrBase64,
@@ -125,8 +128,8 @@ const PrintingPage = () => {
 
     runPrint();
 
-    // Auto-navigate home after 18 seconds
-    const finalTimer = setTimeout(() => navigate('/'), 18000);
+    // Auto-navigate home: lebih cepat untuk surat signed, normal untuk pengajuan baru
+    const finalTimer = setTimeout(() => navigate('/'), isSignedDoc ? 8000 : 18000);
     return () => clearTimeout(finalTimer);
   }, []);
 
@@ -134,9 +137,9 @@ const PrintingPage = () => {
     <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '40px' }}>
       <h2 className="page-title" style={{ marginBottom: '24px', fontSize: 48, fontWeight: 300, letterSpacing: '1px' }}>
         {printStatus === 'downloading' && 'Mengunduh Dokumen...'}
-        {printStatus === 'printing' && 'Mencetak Struk Resi...'}
-        {printStatus === 'done' && 'Pengajuan Berhasil'}
-        {printStatus === 'error' && 'Gagal Mengajukan'}
+        {printStatus === 'printing' && (isSignedDoc ? 'Mencetak Dokumen...' : 'Mencetak Struk Resi...')}
+        {printStatus === 'done' && (isSignedDoc ? 'Dokumen Berhasil Dicetak! ✓' : 'Pengajuan Berhasil')}
+        {printStatus === 'error' && 'Gagal Mencetak'}
         {printStatus === 'idle' && 'Mempersiapkan...'}
       </h2>
 
@@ -151,14 +154,13 @@ const PrintingPage = () => {
       )}
 
       {/* Printer Animation */}
-      {printStatus !== 'error' && !isDone && (
+      {printStatus !== 'error' && printStatus !== 'done' && (
         <div style={{ position: 'relative', width: '300px', height: '360px', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 32 }}>
           <div style={{
             width: '180px', height: '210px', background: 'white', borderRadius: '8px', padding: '16px',
             color: 'black', position: 'absolute', top: '30px', display: 'flex', flexDirection: 'column',
             alignItems: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', zIndex: 1,
-            animation: isDone ? 'none' : 'paperEject 2s infinite ease-in-out',
-            transform: isDone ? 'translateY(120px)' : 'none'
+            animation: 'paperEject 2s infinite ease-in-out',
           }}>
             {qrBase64 ? (
               <img src={`data:image/png;base64,${qrBase64}`} alt="QR Code" style={{ width: '80%', height: 'auto', marginBottom: 8 }} />
@@ -169,9 +171,11 @@ const PrintingPage = () => {
                 <div style={{ width: '60%', height: '6px', background: '#ccc', marginBottom: '24px' }} />
               </>
             )}
-            <div style={{ fontSize: '14px', color: '#666', fontWeight: 'bold' }}>KODE RESI</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#111', textAlign: 'center', marginTop: '6px', border: '2px dashed #888', padding: '6px', width: '100%' }}>
-              {resi}
+            <div style={{ fontSize: '14px', color: '#666', fontWeight: 'bold' }}>
+              {isSignedDoc ? 'DOKUMEN RESMI' : 'KODE RESI'}
+            </div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#111', textAlign: 'center', marginTop: '6px', border: '2px dashed #888', padding: '6px', width: '100%' }}>
+              {isSignedDoc ? resi : resi}
             </div>
           </div>
 
@@ -185,22 +189,49 @@ const PrintingPage = () => {
               position: 'absolute', right: '30px', top: '30px', width: '12px', height: '12px', borderRadius: '50%',
               background: printStatus === 'error' ? '#ef4444' : isDone ? '#10b981' : '#3b82f6',
               boxShadow: `0 0 16px ${printStatus === 'error' ? '#ef4444' : isDone ? '#10b981' : '#3b82f6'}`,
-              animation: isDone ? 'none' : 'blinkLight 1s infinite alternate'
+              animation: 'blinkLight 1s infinite alternate'
             }} />
           </div>
         </div>
       )}
 
-      {/* Status text */}
-      {printStatus !== 'error' && !isDone && (
+      {/* Status text saat proses */}
+      {printStatus !== 'error' && printStatus !== 'done' && (
         <p style={{ color: 'var(--text-secondary)', marginTop: '40px', fontSize: '24px', textAlign: 'center', maxWidth: '800px', lineHeight: 1.6 }}>
           {printStatus === 'downloading' && 'Mengunduh PDF dari server...'}
           {printStatus === 'printing' && 'Jangan tinggalkan area mesin pencetak.'}
         </p>
       )}
 
-      {/* QR Code besar dan Nomor Resi */}
-      {isDone && (
+      {/* Status selesai untuk surat signed — tampilkan pesan saja, tidak ada QR/resi */}
+      {printStatus === 'done' && isSignedDoc && (
+        <div style={{
+          marginTop: 40,
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 24,
+        }}>
+          <div style={{ fontSize: 80 }}>✅</div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 24, maxWidth: 600 }}>
+            Dokumen sah telah dicetak. Silakan ambil dari printer.
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 18 }}>
+            Halaman akan kembali ke beranda secara otomatis...
+          </p>
+          <button
+            className="btn btn-primary"
+            style={{ fontSize: 22, padding: '16px 48px', borderRadius: 16, marginTop: 8 }}
+            onClick={() => navigate('/')}
+          >
+            Kembali ke Beranda
+          </button>
+        </div>
+      )}
+
+      {/* QR Code besar dan Nomor Resi — HANYA untuk pengajuan baru (belum ada PDF) */}
+      {isDone && !isSignedDoc && (
         <div style={{ 
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
