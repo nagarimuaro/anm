@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import MainLayout from './ui/components/layout/MainLayout';
 import GlobalVoiceWidget from './ui/components/GlobalVoiceWidget';
 
-// Pages — organized by feature folder
+// Pages — eager load (ringan)
 import HomePage from './ui/pages/home/HomePage';
 import InputNikPage from './ui/pages/surat/InputNikPage';
 import ProfilWargaPage from './ui/pages/surat/ProfilWargaPage';
@@ -15,9 +15,19 @@ import ScanRfidPage from './ui/pages/bansos/ScanRfidPage';
 import ScanRfidPajakPage from './ui/pages/pajak/ScanRfidPajakPage';
 import BukuTamuPage from './ui/pages/bukuTamu/BukuTamuPage';
 import ScanBarcodePage from './ui/pages/surat/ScanBarcodePage';
-import AbsensiPage from './ui/pages/absensi/AbsensiPage';
-import RekamWajahPage from './ui/pages/absensi/RekamWajahPage';
 import ActivationPage from './ui/pages/activation/ActivationPage';
+
+// ✅ LAZY — hanya di-load saat user buka halaman Absensi
+// Ini mencegah TensorFlow.js + face-api (~35MB) dari di-bundle/load saat startup
+const AbsensiPage = lazy(() => import('./ui/pages/absensi/AbsensiPage'));
+const RekamWajahPage = lazy(() => import('./ui/pages/absensi/RekamWajahPage'));
+
+// Fallback ringan saat lazy page sedang di-load
+const PageLoader = () => (
+  <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'white', fontSize: '18px' }}>
+    Memuat halaman...
+  </div>
+);
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -62,27 +72,29 @@ import './styles.css';
 
 const App = () => {
   return (
-    <ActivationWrapper>
-      <Router>
-        <MainLayout>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/input-nik" element={<InputNikPage />} />
-            <Route path="/profil-warga" element={<ProfilWargaPage />} />
-            <Route path="/surat" element={<SuratPage />} />
-            <Route path="/bansos" element={<BansosPage />} />
-            <Route path="/scan-rfid" element={<ScanRfidPage />} />
-            <Route path="/scan-rfid-pajak" element={<ScanRfidPajakPage />} />
-            <Route path="/buku-tamu" element={<BukuTamuPage />} />
-            <Route path="/scan-barcode" element={<ScanBarcodePage />} />
-            <Route path="/printing" element={<PrintingPage />} />
-            <Route path="/absensi" element={<AbsensiPage />} />
-            <Route path="/rekam-wajah" element={<RekamWajahPage />} />
-          </Routes>
-        </MainLayout>
-        <GlobalVoiceWidget />
-      </Router>
-    </ActivationWrapper>
+      <ActivationWrapper>
+        <Router>
+          <MainLayout>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/input-nik" element={<InputNikPage />} />
+                <Route path="/profil-warga" element={<ProfilWargaPage />} />
+                <Route path="/surat" element={<SuratPage />} />
+                <Route path="/bansos" element={<BansosPage />} />
+                <Route path="/scan-rfid" element={<ScanRfidPage />} />
+                <Route path="/scan-rfid-pajak" element={<ScanRfidPajakPage />} />
+                <Route path="/buku-tamu" element={<BukuTamuPage />} />
+                <Route path="/scan-barcode" element={<ScanBarcodePage />} />
+                <Route path="/printing" element={<PrintingPage />} />
+                <Route path="/absensi" element={<AbsensiPage />} />
+                <Route path="/rekam-wajah" element={<RekamWajahPage />} />
+              </Routes>
+            </Suspense>
+          </MainLayout>
+          <GlobalVoiceWidget />
+        </Router>
+      </ActivationWrapper>
   );
 };
 

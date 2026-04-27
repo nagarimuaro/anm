@@ -56,14 +56,34 @@ function createWindow() {
 
   const isDev = !app.isPackaged;
   console.log(`[DEBUG] app.isPackaged: ${app.isPackaged}, isDev: ${isDev}`);
+
   if (isDev) {
     const port = process.env.PORT || 3002;
     console.log(`[DEBUG] Loading URL: http://localhost:${port}`);
     mainWindow.loadURL(`http://localhost:${port}`);
-    mainWindow.webContents.openDevTools(); // TEMP: Debug audio playback
+    mainWindow.webContents.openDevTools();
   } else {
-    console.log(`[DEBUG] Loading static file from dist`);
-    mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
+    // ✅ Production: jalankan mini express server agar /assets/ path bekerja
+    // Ini lebih reliable dari protocol interceptor yang bermasalah di Windows
+    const express = require('express');
+    const http = require('http');
+    const prodApp = express();
+    const PROD_PORT = 3003;
+
+    // Serve dist/ (webpack output: renderer.js, index.html)
+    prodApp.use(express.static(path.join(__dirname, '../../dist')));
+    // Serve public/ (assets: karakter, background, models, dll)
+    prodApp.use(express.static(path.join(__dirname, '../../public')));
+    // Fallback ke index.html untuk React Router
+    prodApp.get('*', (req, res) => {
+      res.sendFile(path.join(__dirname, '../../dist/index.html'));
+    });
+
+    const prodServer = http.createServer(prodApp);
+    prodServer.listen(PROD_PORT, '127.0.0.1', () => {
+      console.log(`[PROD] Static server running at http://localhost:${PROD_PORT}`);
+      mainWindow.loadURL(`http://localhost:${PROD_PORT}`);
+    });
   }
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {

@@ -110,7 +110,8 @@ const PrintingPage = () => {
           electron.ipcRenderer.invoke('kiosk:printReceipt', {
             resi: resi,
             qrBase64: qrBase64,
-            jenis_surat: result?.jenis_surat || result?.templateNama
+            jenis_surat: result?.jenis_surat || result?.templateNama,
+            warga: warga,
           });
         }
         

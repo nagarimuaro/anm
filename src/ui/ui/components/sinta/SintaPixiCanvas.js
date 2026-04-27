@@ -17,10 +17,10 @@ const SintaPixiCanvas = () => {
       await app.init({
         resizeTo: containerRef.current,
         backgroundAlpha: 0, // Transparent background
-        antialias: true,
-        resolution: window.devicePixelRatio || 1,
-        powerPreference: 'high-performance',
-        autoDensity: true,
+        antialias: true,            // ✅ Nyalakan untuk kualitas render lebih halus
+        resolution: 1,              // ✅ Paksa 1x, jangan ikuti devicePixelRatio
+        powerPreference: 'default', // ✅ Hemat power, tidak perlu 'high-performance'
+        autoDensity: false,
       });
 
       if (!isMounted) {
@@ -43,14 +43,16 @@ const SintaPixiCanvas = () => {
       }
 
       try {
-        texturesRef.current = {
-          idle: await PIXI.Assets.load('/assets/karakter/SINTA.png'),
-          A: await PIXI.Assets.load('/assets/karakter/SINTA_A.png'),
-          E: await PIXI.Assets.load('/assets/karakter/SINTA_E.png'),
-          I: await PIXI.Assets.load('/assets/karakter/SINTA_I.png'),
-          O: await PIXI.Assets.load('/assets/karakter/SINTA_O.png'),
-          U: await PIXI.Assets.load('/assets/karakter/SINTA_U.png'),
-        };
+        // ✅ Load semua tekstur PARALEL — jauh lebih cepat dari sequential await
+        const [idle, A, E, I, O, U] = await Promise.all([
+          PIXI.Assets.load('/assets/karakter/SINTA.webp'),
+          PIXI.Assets.load('/assets/karakter/SINTA_A.webp'),
+          PIXI.Assets.load('/assets/karakter/SINTA_E.webp'),
+          PIXI.Assets.load('/assets/karakter/SINTA_I.webp'),
+          PIXI.Assets.load('/assets/karakter/SINTA_O.webp'),
+          PIXI.Assets.load('/assets/karakter/SINTA_U.webp'),
+        ]);
+        texturesRef.current = { idle, A, E, I, O, U };
 
         if (!isMounted) return;
 
@@ -79,10 +81,13 @@ const SintaPixiCanvas = () => {
         // Listen event resize dari PIXI untuk mengatur ulang sprite
         app.renderer.on('resize', resizeSprite);
 
-        let toggleViseme = false;
+        // ✅ Kurangi FPS ticker ke 30fps - cukup untuk animasi lipsync
+        app.ticker.maxFPS = 30;
+
         let tickCount = 0;
         let lastViseme = 'idle';
         let framesSinceLastChange = 0;
+        let lastTextureKey = 'idle';
 
         app.ticker.add(() => {
           const rms = window.currentVoiceRMS || 0;
@@ -102,24 +107,18 @@ const SintaPixiCanvas = () => {
           
           // Mencegah bibir bergetar terlalu cepat (chatter)
           if (targetViseme !== lastViseme) {
-            // Tahan frame selama minimal 5 frame (~80ms)
-            // KECUALI jika kembali ke 'idle' (mulut harus cepat nutup di akhir kata)
-            if (framesSinceLastChange > 5 || targetViseme === 'idle') {
+            if (framesSinceLastChange > 4 || targetViseme === 'idle') {
               currentViseme = targetViseme;
               lastViseme = targetViseme;
               framesSinceLastChange = 0;
-              
-              if (targetViseme !== 'idle') {
-                toggleViseme = !toggleViseme;
-              }
             }
           }
 
-          if (spriteRef.current && texturesRef.current[currentViseme]) {
-            if (spriteRef.current.texture !== texturesRef.current[currentViseme]) {
-              spriteRef.current.texture = texturesRef.current[currentViseme];
-              resizeSprite();
-            }
+          // ✅ Hanya ganti texture jika memang berbeda (cegah GPU flush tidak perlu)
+          if (spriteRef.current && texturesRef.current[currentViseme] && lastTextureKey !== currentViseme) {
+            spriteRef.current.texture = texturesRef.current[currentViseme];
+            lastTextureKey = currentViseme;
+            resizeSprite();
           }
         });
 

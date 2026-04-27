@@ -18,7 +18,7 @@
     },
     "win": {
       "target": "nsis",
-      "icon": "public/favicon.ico"
+      "icon": "public/assets/dekstop-icon.png"
     },
     "nsis": {
       "oneClick": false,
@@ -56,8 +56,10 @@
     "@tensorflow/tfjs": "^4.22.0",
     "@vladmandic/face-api": "^1.7.15",
     "dotenv": "^16.4.5",
+    "electron-pos-printer": "^1.4.0",
     "express": "^4.21.0",
     "google-tts-api": "^2.0.2",
+    "node-thermal-printer": "^4.6.0",
     "pixi.js": "^8.18.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -78,6 +80,7 @@
     "electron": "^39.8.5",
     "electron-builder": "^26.8.1",
     "html-webpack-plugin": "^5.6.0",
+    "sharp": "^0.34.5",
     "style-loader": "^3.3.4",
     "wait-on": "^7.2.0",
     "webpack": "^5.91.0",
