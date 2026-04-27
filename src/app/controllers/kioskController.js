@@ -64,20 +64,44 @@ function register(ipc) {
     return await kioskService.hrStatusMonitor();
   });
 
-  // Print PDF dari buffer yang dikirim renderer
+  // Print PDF surat ke printer EPSON L120 (A4, silent)
   ipc.handle('kiosk:printPdf', async (event, { data, filename }) => {
     try {
-      const { app, shell } = require('electron');
+      const { app, BrowserWindow: PrintWindow } = require('electron');
       const tempDir = path.join(app.getPath('temp'), 'anm_print');
       if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
       const filePath = path.join(tempDir, filename || 'surat.pdf');
       fs.writeFileSync(filePath, Buffer.from(data));
-      
-      // Buka dengan default PDF viewer / Acrobat Reader (akan memunculkan dialog print)
-      await shell.openPath(filePath);
 
-      return { success: true, path: filePath };
+      // Buka PDF di hidden BrowserWindow lalu cetak silent ke EPSON
+      const printWin = new PrintWindow({ show: false, width: 800, height: 1130 });
+
+      // Gunakan file:// protocol untuk load PDF lokal
+      await printWin.loadURL(`file://${filePath.replace(/\\/g, '/')}`);
+
+      // Tunggu PDF render selesai
+      await new Promise(r => setTimeout(r, 1500));
+
+      return new Promise((resolve) => {
+        printWin.webContents.print({
+          silent: true,
+          printBackground: true,
+          deviceName: 'EPSON L120 Series',
+          pageSize: 'A4',
+          margins: { marginType: 'default' },
+        }, (success, failureReason) => {
+          setTimeout(() => printWin.close(), 500);
+
+          if (success) {
+            console.log('[PrintPdf] ✅ Surat berhasil dicetak ke EPSON L120.');
+            resolve({ success: true, path: filePath });
+          } else {
+            console.error('[PrintPdf] ❌ Gagal mencetak:', failureReason);
+            resolve({ success: false, message: failureReason });
+          }
+        });
+      });
     } catch (err) {
       console.error('kiosk:printPdf error:', err);
       return { success: false, message: err.message };
