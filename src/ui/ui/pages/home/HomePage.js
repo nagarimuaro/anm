@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import SintaPixiCanvas from '../../components/sinta/SintaPixiCanvas';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -64,6 +65,13 @@ const HomePage = () => {
       desc: 'Scan barcode/resi',
       action: () => navigate('/scan-barcode'),
       color: '#ec4899',
+    },
+    {
+      icon: '🏠',
+      title: 'Pajak PBB',
+      desc: 'Cek & Bayar PBB Tahunan',
+      action: () => navigate('/scan-rfid-pajak'),
+      color: '#8b5cf6',
     },
   ];
 
@@ -187,7 +195,7 @@ const HomePage = () => {
       )}
 
 
-      {/* SINTA Character — Fixed agar tidak terpotong overflow container */}
+      {/* SINTA Character — PixiJS Lipsync Canvas */}
       <div style={{
         position: 'fixed',
         top: 0,
@@ -200,75 +208,108 @@ const HomePage = () => {
         animation: 'fadeSlideUp 0.8s ease 0.1s both',
         zIndex: 0,
       }}>
-        <img
-          src="/assets/karakter/SINTA.png"
-          alt="Sinta"
-          style={{
-            height: '110vh',
-            objectFit: 'contain',
-            filter: 'drop-shadow(0 20px 48px rgba(0,0,0,0.4))',
-          }}
-        />
+        <SintaPixiCanvas />
       </div>
 
-      {/* Services Grid — 4 columns */}
+      {/* Dashboard Panel Container */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '20px',
         width: '100%',
-        maxWidth: '1000px',
-        padding: '0 20px',
-        marginBottom: '40px',
+        maxWidth: '1500px',
+        margin: '0 auto 20px auto', // Kurangi margin bawah dari 50px ke 20px
+        padding: '24px 32px', // Kurangi padding dari 40px ke 24px atas-bawah
+        background: 'rgba(255, 255, 255, 0.15)',
+        backdropFilter: 'blur(32px) saturate(1.2)',
+        WebkitBackdropFilter: 'blur(32px) saturate(1.2)',
+        border: '1.5px solid rgba(255, 255, 255, 0.4)',
+        borderRadius: '32px',
+        boxShadow: '0 30px 60px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255,255,255,0.6)',
         position: 'relative',
         zIndex: 1,
+        animation: 'fadeSlideUp 0.6s ease both'
       }}>
+        
+        {/* Header Text untuk Panel */}
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}> {/* Kurangi margin bawah dari 32px ke 20px */}
+          <h2 style={{ 
+            color: '#ffffff', 
+            fontSize: '28px', // Kurangi dari 32px ke 28px
+            fontFamily: 'var(--font-heading)', 
+            fontWeight: '700', 
+            textShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            marginBottom: '4px'
+          }}>
+            Layanan Anjungan Mandiri
+          </h2>
+          <p style={{ 
+            color: 'rgba(255, 255, 255, 0.9)', 
+            fontSize: '16px', // Kurangi dari 18px ke 16px
+            textShadow: '0 2px 8px rgba(0,0,0,0.3)'
+          }}>
+            Pilih menu layanan yang Anda butuhkan di bawah ini
+          </p>
+        </div>
+
+        {/* Services Grid — 5 columns sejajar */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, 1fr)',
+          gap: '24px',
+          width: '100%',
+        }}>
         {menuItems.map((item, i) => (
           <div 
             key={i} 
             className="menu-card" 
             onClick={item.action}
             style={{
-              padding: '32px 24px',
+              padding: '32px 20px', // Kembalikan tinggi card
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '16px',
+              gap: '16px', // Kembalikan gap card
               animation: `fadeSlideUp 0.5s ease ${i * 0.1}s both`,
-              '--card-color': item.color
+              '--card-color': item.color,
+              background: `linear-gradient(135deg, ${item.color}, ${item.color}dd)`,
+              border: `1px solid rgba(255,255,255,0.3)`
             }}
           >
             <div style={{
-              width: '80px',
-              height: '80px',
+              width: '84px', // Kembalikan ukuran icon
+              height: '84px',
               borderRadius: '50%',
-              background: `linear-gradient(135deg, ${item.color}50, ${item.color}30)`,
-              border: `1px solid ${item.color}70`,
+              background: `rgba(255, 255, 255, 0.2)`,
+              border: `1px solid rgba(255, 255, 255, 0.4)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '40px',
-              boxShadow: `0 8px 32px ${item.color}20`,
+              fontSize: '42px', // Kembalikan ukuran emoji
+              boxShadow: `0 8px 32px rgba(0,0,0,0.15)`,
               transition: 'all 0.3s ease'
             }} className="menu-icon-container">
               {item.icon}
             </div>
             <div style={{ textAlign: 'center' }}>
               <h3 style={{ 
-                fontFamily: 'var(--font-heading)',
-                fontSize: '18px',
-                fontWeight: 700,
-                color: '#0f172a',
-                marginBottom: '8px'
-              }}>{item.title}</h3>
+                fontFamily: 'var(--font-heading)', 
+                fontSize: '22px', // Kembalikan ukuran font title
+                fontWeight: '700', 
+                marginBottom: '6px',
+                color: '#ffffff',
+                textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}>
+                {item.title}
+              </h3>
               <p style={{ 
-                fontSize: '13px', 
-                color: '#374151',
-                lineHeight: '1.4'
-              }}>{item.desc}</p>
+                fontSize: '15px', // Kembalikan ukuran font deskripsi
+                color: 'rgba(255, 255, 255, 0.9)', 
+                lineHeight: '1.4' 
+              }}>
+                {item.desc}
+              </p>
             </div>
           </div>
         ))}
+        </div>
       </div>
     </div>
   );

@@ -56,6 +56,14 @@ function createTables() {
       )
     `);
 
+    // Tabel settings - untuk config dinamis seperti logo
+    db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key           TEXT PRIMARY KEY,
+        value         TEXT NOT NULL
+      )
+    `);
+
     // Tabel sessions — tracking per interaksi user
     db.run(`
       CREATE TABLE IF NOT EXISTS sessions (

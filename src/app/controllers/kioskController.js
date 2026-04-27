@@ -112,6 +112,107 @@ function register(ipc) {
       return { success: false, message: e.message };
     }
   });
+
+  // --- SETTINGS & WINDOW CONTROLS ---
+  ipc.handle('kiosk:settings:getLogo', async () => {
+    try {
+      const { dbGet } = require('../../infrastructure/database/db');
+      const row = await dbGet(`SELECT value FROM settings WHERE key = 'app_logo'`);
+      return row ? row.value : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  ipc.handle('kiosk:settings:setLogo', async () => {
+    try {
+      const { dialog } = require('electron');
+      const fs = require('fs');
+      const { dbRun } = require('../../infrastructure/database/db');
+
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'svg'] }]
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const filePath = result.filePaths[0];
+        // Read file and convert to base64
+        const bitmap = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).substring(1);
+        const mime = ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
+        const base64Data = `data:${mime};base64,${bitmap.toString('base64')}`;
+
+        await dbRun(`INSERT OR REPLACE INTO settings (key, value) VALUES ('app_logo', ?)`, [base64Data]);
+        return { success: true, logo: base64Data };
+      }
+      return { success: false, message: 'Dibatalkan' };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  });
+
+  ipc.handle('kiosk:settings:getBackground', async () => {
+    try {
+      const { dbGet } = require('../../infrastructure/database/db');
+      const row = await dbGet(`SELECT value FROM settings WHERE key = 'app_background'`);
+      return row ? row.value : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  ipc.handle('kiosk:settings:setBackground', async () => {
+    try {
+      const { dialog } = require('electron');
+      const fs = require('fs');
+      const { dbRun } = require('../../infrastructure/database/db');
+
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      });
+
+      if (!result.canceled && result.filePaths.length > 0) {
+        const filePath = result.filePaths[0];
+        const bitmap = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).substring(1);
+        const mime = `image/${ext}`;
+        const base64Data = `data:${mime};base64,${bitmap.toString('base64')}`;
+
+        await dbRun(`INSERT OR REPLACE INTO settings (key, value) VALUES ('app_background', ?)`, [base64Data]);
+        return { success: true, bg: base64Data };
+      }
+      return { success: false, message: 'Dibatalkan' };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  });
+
+  ipc.handle('kiosk:settings:get', async (event, key) => {
+    try {
+      const { dbGet } = require('../../infrastructure/database/db');
+      const row = await dbGet(`SELECT value FROM settings WHERE key = ?`, [key]);
+      return row ? row.value : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  ipc.handle('kiosk:settings:set', async (event, { key, value }) => {
+    try {
+      const { dbRun } = require('../../infrastructure/database/db');
+      await dbRun(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`, [key, value]);
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e.message };
+    }
+  });
+
+  ipc.handle('kiosk:exitApp', () => {
+    const { app } = require('electron');
+    app.quit();
+  });
 }
 
 module.exports = { register };

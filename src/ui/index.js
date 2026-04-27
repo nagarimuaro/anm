@@ -12,6 +12,7 @@ import SuratPage from './ui/pages/surat/SuratPage';
 import PrintingPage from './ui/pages/surat/PrintingPage';
 import BansosPage from './ui/pages/bansos/BansosPage';
 import ScanRfidPage from './ui/pages/bansos/ScanRfidPage';
+import ScanRfidPajakPage from './ui/pages/pajak/ScanRfidPajakPage';
 import BukuTamuPage from './ui/pages/bukuTamu/BukuTamuPage';
 import ScanBarcodePage from './ui/pages/surat/ScanBarcodePage';
 import AbsensiPage from './ui/pages/absensi/AbsensiPage';
@@ -71,6 +72,7 @@ const App = () => {
             <Route path="/surat" element={<SuratPage />} />
             <Route path="/bansos" element={<BansosPage />} />
             <Route path="/scan-rfid" element={<ScanRfidPage />} />
+            <Route path="/scan-rfid-pajak" element={<ScanRfidPajakPage />} />
             <Route path="/buku-tamu" element={<BukuTamuPage />} />
             <Route path="/scan-barcode" element={<ScanBarcodePage />} />
             <Route path="/printing" element={<PrintingPage />} />

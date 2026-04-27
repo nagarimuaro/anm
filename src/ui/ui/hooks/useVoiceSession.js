@@ -146,8 +146,88 @@ export default function useVoiceSession(disableMic = false) {
 
 
   // ── PCM Playback via AudioContext BufferSource ──
-  // HTML5 <audio> kurang baik menangani ratusan chunks PCM yang sangat pendek (ms)
   // AudioContext sangat bisa menangani PCM stream (gapless) jika diputar secara berurutan.
+  
+  const initPlaybackContext = useCallback(() => {
+    if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
+      playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      nextPlayTimeRef.current = 0;
+      
+      // Buat AnalyserNode untuk lipsync sinkron dengan speaker
+      const analyser = playbackCtxRef.current.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.connect(playbackCtxRef.current.destination);
+      playbackCtxRef.current.lipsyncAnalyser = analyser;
+
+      const dataArray = new Float32Array(analyser.frequencyBinCount);
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+      let smoothedRms = 0;
+      
+      const updateLipsync = () => {
+        if (playbackCtxRef.current && playbackCtxRef.current.state === 'running') {
+          analyser.getFloatTimeDomainData(dataArray);
+          analyser.getByteFrequencyData(freqData);
+
+          // 1. RMS (Volume) Calculation
+          let sumSq = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sumSq += dataArray[i] * dataArray[i];
+          }
+          const rms = Math.sqrt(sumSq / dataArray.length);
+          const displayRms = rms * 20000; 
+          
+          if (displayRms > smoothedRms) {
+            smoothedRms = smoothedRms * 0.3 + displayRms * 0.7;
+          } else {
+            smoothedRms = smoothedRms * 0.85 + displayRms * 0.15;
+          }
+          window.currentVoiceRMS = smoothedRms;
+
+          // 2. Formant (Phoneme/Vowel) Extraction via FFT
+          const getEnergy = (startFreq, endFreq) => {
+            const binSize = 24000 / analyser.fftSize; // 46.875 Hz
+            const startBin = Math.floor(startFreq / binSize);
+            const endBin = Math.floor(endFreq / binSize);
+            let sum = 0;
+            for (let i = startBin; i <= endBin; i++) sum += freqData[i];
+            return sum / (endBin - startBin + 1);
+          };
+
+          // F1 (Mouth Openness)
+          const f1_low = getEnergy(300, 500);   // I, U
+          const f1_mid = getEnergy(500, 700);   // E, O
+          const f1_high = getEnergy(700, 1200); // A
+
+          // F2 (Tongue Position)
+          const f2_low = getEnergy(800, 1200);  // U, O
+          const f2_high = getEnergy(1500, 2500); // I, E
+
+          let targetPhoneme = 'idle';
+          if (rms > 0.005) { // Only detect if loud enough to be a vowel
+            if (f1_high > f1_low && f1_high > f1_mid) {
+              targetPhoneme = 'A';
+            } else if (f1_mid > f1_low && f1_mid > f1_high) {
+              targetPhoneme = (f2_high > f2_low + 10) ? 'E' : 'O';
+            } else {
+              targetPhoneme = (f2_high > f2_low + 10) ? 'I' : 'U';
+            }
+          }
+          window.currentPhoneme = targetPhoneme;
+          
+          if (!window.lipsyncTick) window.lipsyncTick = 0;
+          window.lipsyncTick++;
+          if (window.lipsyncTick % 30 === 0 && rms > 0.001) {
+             console.log(`[AudioAnalyser] Phoneme: ${targetPhoneme} | PixiRMS: ${Math.round(smoothedRms)}`);
+          }
+        } else {
+          window.currentVoiceRMS = 0;
+          window.currentPhoneme = 'idle';
+        }
+        requestAnimationFrame(updateLipsync);
+      };
+      requestAnimationFrame(updateLipsync);
+    }
+  }, []);
   
   const pcmToFloat32Array = useCallback((base64pcm) => {
     const binaryString = window.atob(base64pcm);
@@ -164,11 +244,8 @@ export default function useVoiceSession(disableMic = false) {
   }, []);
 
   const queuePCMChunk = useCallback(async (base64data) => {
-    // Pastikan AudioContext siap
-    if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
-      playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-      nextPlayTimeRef.current = 0;
-    }
+    initPlaybackContext();
+    
     const ctx = playbackCtxRef.current;
     if (ctx.state === 'suspended') await ctx.resume();
 
@@ -179,7 +256,8 @@ export default function useVoiceSession(disableMic = false) {
     buf.getChannelData(0).set(float32Array);
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    // Hubungkan ke analyser, BUKAN langsung ke destination (karena analyser sudah konek ke destination)
+    src.connect(ctx.lipsyncAnalyser || ctx.destination);
 
     const now = ctx.currentTime;
     // Jika nextPlayTime telat, set ke "now" + sedikit margin agar gapless
@@ -224,10 +302,7 @@ export default function useVoiceSession(disableMic = false) {
     await openMic();
 
     if (!disableMic) {
-      if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
-        playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-        nextPlayTimeRef.current = 0;
-      }
+      initPlaybackContext();
       if (playbackCtxRef.current.state === 'suspended') {
         await playbackCtxRef.current.resume();
       }
@@ -365,10 +440,7 @@ export default function useVoiceSession(disableMic = false) {
       } else if (data.state === 'SPEAKING') {
         // speakOnce mode — hanya putar audio, TIDAK buka mic atau kirim greeting
         // Pastikan AudioContext diinisialisasi agar audio bisa diputar
-        if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
-          playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-          nextPlayTimeRef.current = 0;
-        }
+        initPlaybackContext();
         if (playbackCtxRef.current.state === 'suspended') {
           playbackCtxRef.current.resume().catch(() => {});
         }
