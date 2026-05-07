@@ -10,8 +10,8 @@ const MainLayout = ({ children }) => {
   const [bgUrl, setBgUrl] = useState('/assets/background.webp');
   const [logoSize, setLogoSize] = useState(120);
   const [logoX, setLogoX] = useState(0);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-
+  const [showSettingsModal, setShowSettingsModal] = useState(false); // Deprecated
+  const [apiKey, setApiKey] = useState(''); // Deprecated
   useEffect(() => {
     if (electron) {
       electron.ipcRenderer.invoke('kiosk:settings:getLogo').then(url => {
@@ -26,46 +26,34 @@ const MainLayout = ({ children }) => {
       electron.ipcRenderer.invoke('kiosk:settings:get', 'logo_x').then(val => {
         if (val !== null) setLogoX(parseInt(val, 10));
       });
+      electron.ipcRenderer.invoke('kiosk:settings:get', 'gemini_api_key').then(val => {
+        if (val !== null) setApiKey(val);
+      });
     }
+
   }, []);
 
   const updateLogoSetting = (key, val) => {
-    if (key === 'logo_size') setLogoSize(val);
-    if (key === 'logo_x') setLogoX(val);
-    if (electron) {
-      electron.ipcRenderer.invoke('kiosk:settings:set', { key, value: val.toString() });
-    }
+    // Dipindahkan ke SettingsPage
   };
 
-  const handleChangeLogo = async () => {
-    if (electron) {
-      const res = await electron.ipcRenderer.invoke('kiosk:settings:setLogo');
-      if (res.success) {
-        setLogoUrl(res.logo);
-      } else if (res.message !== 'Dibatalkan') {
-        alert('Gagal mengubah logo: ' + res.message);
-      }
-    }
-  };
+  const handleSaveApiKey = () => {};
+  const handleChangeLogo = () => {};
+  const handleChangeBackground = () => {};
+  const handleExitApp = () => {};
 
-  const handleChangeBackground = async () => {
-    if (electron) {
-      const res = await electron.ipcRenderer.invoke('kiosk:settings:setBackground');
-      if (res.success) {
-        setBgUrl(res.bg);
-      } else if (res.message !== 'Dibatalkan') {
-        alert('Gagal mengubah latar belakang: ' + res.message);
-      }
-    }
-  };
-
-  const handleExitApp = () => {
-    if (electron) {
-      if (window.confirm('Apakah Anda yakin ingin mematikan aplikasi Kiosk?')) {
-        electron.ipcRenderer.invoke('kiosk:exitApp');
-      }
-    }
-  };
+  // Listen for live updates from SettingsPage
+  useEffect(() => {
+    const handleUpdateLogo = (e) => {
+      const { key, val } = e.detail;
+      if (key === 'logo_size') setLogoSize(parseInt(val, 10));
+      if (key === 'logo_x') setLogoX(parseInt(val, 10));
+      if (key === 'logo_url') setLogoUrl(val);
+      if (key === 'bg_url') setBgUrl(val);
+    };
+    window.addEventListener('update-header-logo', handleUpdateLogo);
+    return () => window.removeEventListener('update-header-logo', handleUpdateLogo);
+  }, []);
 
   useEffect(() => {
     const updateClock = () => {
@@ -123,7 +111,7 @@ const MainLayout = ({ children }) => {
           </button>
 
           <button
-            onClick={() => setShowSettingsModal(true)}
+            onClick={() => navigate('/settings')}
             title="Pengaturan"
             style={{ 
               background: 'transparent', 
@@ -145,84 +133,7 @@ const MainLayout = ({ children }) => {
         </div>
       </header>
       
-      {/* Settings Modal */}
-      {showSettingsModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(12px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 999,
-          animation: 'fadeSlideDown 0.3s ease'
-        }}>
-          <div className="glass-card" style={{ padding: '40px', maxWidth: '400px', width: '90%', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '10px' }}>⚙️</div>
-            <h2 style={{ fontSize: '26px', color: 'var(--text-primary)', fontFamily: 'var(--font-heading)' }}>
-              Pengaturan Sistem
-            </h2>
-            <p style={{ color: 'var(--text-secondary)' }}>Sesuaikan preferensi Anjungan Kiosk Anda di sini.</p>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
-              
-              {/* Pengaturan Ukuran Logo */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.1)', padding: '12px 16px', borderRadius: '12px' }}>
-                <span style={{ color: 'white', fontSize: '15px' }}>Ukuran Logo</span>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button className="btn" style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={() => updateLogoSetting('logo_size', logoSize - 10)}>-</button>
-                  <span style={{ color: 'white', width: '36px', fontWeight: 'bold' }}>{logoSize}</span>
-                  <button className="btn" style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={() => updateLogoSetting('logo_size', logoSize + 10)}>+</button>
-                </div>
-              </div>
-
-              {/* Pengaturan Posisi Logo (Kiri/Kanan) */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.1)', padding: '12px 16px', borderRadius: '12px' }}>
-                <span style={{ color: 'white', fontSize: '15px' }}>Geser Posisi (X)</span>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button className="btn" style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={() => updateLogoSetting('logo_x', logoX - 10)}>-</button>
-                  <span style={{ color: 'white', width: '36px', fontWeight: 'bold' }}>{logoX}</span>
-                  <button className="btn" style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white' }} onClick={() => updateLogoSetting('logo_x', logoX + 10)}>+</button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button 
-                  className="btn" 
-                  style={{ flex: 1, background: 'var(--accent-light)', color: 'white', border: 'none', fontWeight: 600, padding: '16px 8px', borderRadius: '12px', fontSize: '14px' }}
-                  onClick={handleChangeLogo}
-                >
-                  🖼️ Ganti Logo
-                </button>
-                <button 
-                  className="btn" 
-                  style={{ flex: 1, background: 'var(--accent)', color: 'white', border: 'none', fontWeight: 600, padding: '16px 8px', borderRadius: '12px', fontSize: '14px' }}
-                  onClick={handleChangeBackground}
-                >
-                  🌄 Ganti Latar
-                </button>
-              </div>
-              
-              <button 
-                className="btn" 
-                style={{ background: 'rgba(248, 113, 113, 0.2)', color: '#f87171', border: '1px solid rgba(248, 113, 113, 0.5)', fontWeight: 600, padding: '16px', borderRadius: '12px' }}
-                onClick={handleExitApp}
-              >
-                🔌 Matikan Kiosk
-              </button>
-              
-              <button 
-                className="btn btn-outline" 
-                style={{ borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', padding: '16px', borderRadius: '12px', marginTop: '10px' }}
-                onClick={() => setShowSettingsModal(false)}
-              >
-                Kembali
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal Pengaturan dipindah ke SettingsPage */}
 
       <main className="main-content">
         {children}

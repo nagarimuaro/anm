@@ -11,6 +11,12 @@ const HomePage = () => {
   // (OpenRouter: cloud API — tidak perlu download/setup lokal)
 
   useEffect(() => {
+    // Hentikan suara dari halaman sebelumnya saat kembali ke beranda
+    const electron = window.require ? window.require('electron') : null;
+    if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
+  }, []);
+
+  useEffect(() => {
     // Polling function to check for updates from the Main Process (where heartbeat is cached)
     const checkUpdate = async () => {
       if (window.require) {

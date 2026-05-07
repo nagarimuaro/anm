@@ -11,8 +11,8 @@
   --bg-primary: #0a0e27;
   --bg-secondary: #111638;
   --bg-surface: rgba(10, 14, 39, 0.6);
-  --bg-glass: rgba(10, 14, 39, 0.75);
-  --bg-glass-hover: rgba(10, 14, 39, 0.9);
+  --bg-glass: rgba(30, 41, 88, 0.6); /* Lebih berwarna biru / indigo */
+  --bg-glass-hover: rgba(45, 55, 110, 0.8);
 
   --accent-primary: #6366f1;
   /* Indigo */
@@ -159,8 +159,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: var(--space-xl);
+  justify-content: flex-start;  /* FIX: center+overflow-y:auto menyebabkan konten terpotong di atas */
+  padding: 140px var(--space-xl) var(--space-xl); /* paddingTop = header height (logo 120px + padding) */
   overflow-y: auto;
   position: relative;
 }
@@ -187,12 +187,7 @@ body {
   transition: all var(--transition-normal);
 }
 
-.glass-card:hover {
-  background: var(--bg-glass-hover);
-  border-color: rgba(99, 102, 241, 0.3);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
+/* Removed hover on glass-card for touch optimization */
 
 /* ── Buttons ── */
 .btn {
@@ -368,9 +363,9 @@ body {
 .key-btn {
   width: 100%;
   aspect-ratio: 1;
-  max-height: 90px;
-  font-size: 28px;
-  font-weight: 600;
+  max-height: 120px;
+  font-size: 36px;
+  font-weight: 700;
   font-family: var(--font-body);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-md);
@@ -396,7 +391,7 @@ body {
 .key-btn.action {
   background: var(--gradient-accent);
   color: white;
-  font-size: 22px;
+  font-size: 28px;
   border: none;
 }
 
@@ -407,11 +402,11 @@ body {
 /* ── NIK Input ── */
 .nik-input {
   font-family: 'JetBrains Mono', 'Courier New', monospace;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
   padding: var(--space-md) var(--space-xl);
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
   text-align: center;
   background: var(--bg-glass);
   border: 2px solid rgba(99, 102, 241, 0.3);
@@ -649,13 +644,13 @@ body {
 
 .data-label {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 20px;
 }
 
 .data-value {
   color: var(--text-primary);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 20px;
 }
 
 /* ── QR Code / Receipt ── */
@@ -777,14 +772,14 @@ body {
 /* ── Headings ── */
 .page-title {
   font-family: var(--font-heading);
-  font-size: 28px;
+  font-size: 42px;
   font-weight: 700;
   margin-bottom: var(--space-sm);
   text-align: center;
 }
 
 .page-subtitle {
-  font-size: 16px;
+  font-size: 22px;
   color: var(--text-secondary);
   text-align: center;
   margin-bottom: var(--space-xl);

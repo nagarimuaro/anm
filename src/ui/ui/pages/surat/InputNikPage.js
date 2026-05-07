@@ -31,6 +31,13 @@ const InputNikPage = () => {
     }
   }, []);
 
+  // Cleanup: hentikan suara saat keluar halaman
+  useEffect(() => {
+    return () => {
+      if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
+    };
+  }, []);
+
   const handleKeyPress = async (key) => {
     if (key === 'OK') {
       if (nik.length >= 16) {
@@ -70,49 +77,59 @@ const InputNikPage = () => {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'OK'];
 
   return (
-    <div className="page-enter" style={{ textAlign: 'center' }}>
-      <h2 className="page-title">Masukkan NIK Anda</h2>
-      <p className="page-subtitle">Ketik 16 digit Nomor Induk Kependudukan</p>
+    <div className="page-enter" style={{ textAlign: 'center', width: '100%', maxWidth: 800, margin: '0 auto' }}>
+      <div className="glass-card" style={{ padding: '40px 24px', overflow: 'hidden' }}>
+        <div style={{
+          height: 6,
+          background: 'var(--gradient-accent)',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+        }} />
+        <h2 className="page-title">Masukkan NIK Anda</h2>
+        <p className="page-subtitle">Ketik 16 digit Nomor Induk Kependudukan</p>
 
-      <input
-        type="text"
-        className="nik-input"
-        value={nik}
-        readOnly
-        placeholder="________________"
-      />
+        <input
+          type="text"
+          className="nik-input"
+          value={nik}
+          readOnly
+          placeholder="________________"
+        />
 
-      {/* NIK Progress Dots */}
-      <div className="nik-progress">
-        {Array.from({ length: 16 }).map((_, i) => (
-          <div key={i} className={`nik-digit ${i < nik.length ? 'filled' : ''}`} />
-        ))}
-      </div>
-
-      {error && (
-        <p style={{ color: 'var(--accent-danger)', fontSize: 14, marginTop: 12 }}>{error}</p>
-      )}
-
-      {loading ? (
-        <div style={{ marginTop: 24 }}>
-          <div className="shimmer" style={{ width: 200, height: 48, borderRadius: 12, margin: '0 auto' }} />
-          <p style={{ color: 'var(--text-secondary)', marginTop: 12, fontSize: 14 }}>Mencari data warga...</p>
-        </div>
-      ) : (
-        <div className="keyboard-container" style={{ marginTop: '24px' }}>
-          {keys.map((key) => (
-            <button
-              key={key}
-              className={`key-btn ${key === 'OK' || key === '←' ? 'action' : ''}`}
-              onClick={() => handleKeyPress(key)}
-              disabled={key === 'OK' && nik.length < 16}
-              style={key === 'OK' && nik.length < 16 ? { opacity: 0.4 } : {}}
-            >
-              {key}
-            </button>
+        {/* NIK Progress Dots */}
+        <div className="nik-progress">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <div key={i} className={`nik-digit ${i < nik.length ? 'filled' : ''}`} />
           ))}
         </div>
-      )}
+
+        {error && (
+          <p style={{ color: 'var(--accent-danger)', fontSize: 14, marginTop: 12 }}>{error}</p>
+        )}
+
+        {loading ? (
+          <div style={{ marginTop: 24 }}>
+            <div className="shimmer" style={{ width: 200, height: 48, borderRadius: 12, margin: '0 auto' }} />
+            <p style={{ color: 'var(--text-secondary)', marginTop: 12, fontSize: 14 }}>Mencari data warga...</p>
+          </div>
+        ) : (
+          <div className="keyboard-container" style={{ marginTop: '32px', maxWidth: '500px' }}>
+            {keys.map((key) => (
+              <button
+                key={key}
+                className={`key-btn ${key === 'OK' || key === '←' ? 'action' : ''}`}
+                onClick={() => handleKeyPress(key)}
+                disabled={key === 'OK' && nik.length < 16}
+                style={key === 'OK' && nik.length < 16 ? { opacity: 0.4 } : {}}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <button
         className="btn btn-secondary"

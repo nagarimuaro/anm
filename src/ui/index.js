@@ -16,6 +16,7 @@ import ScanRfidPajakPage from './ui/pages/pajak/ScanRfidPajakPage';
 import BukuTamuPage from './ui/pages/bukuTamu/BukuTamuPage';
 import ScanBarcodePage from './ui/pages/surat/ScanBarcodePage';
 import ActivationPage from './ui/pages/activation/ActivationPage';
+import SettingsPage from './ui/pages/settings/SettingsPage';
 
 // ✅ LAZY — hanya di-load saat user buka halaman Absensi
 // Ini mencegah TensorFlow.js + face-api (~35MB) dari di-bundle/load saat startup
@@ -89,6 +90,7 @@ const App = () => {
                 <Route path="/printing" element={<PrintingPage />} />
                 <Route path="/absensi" element={<AbsensiPage />} />
                 <Route path="/rekam-wajah" element={<RekamWajahPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
               </Routes>
             </Suspense>
           </MainLayout>

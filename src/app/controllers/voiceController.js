@@ -29,6 +29,8 @@ function register(ipc, mainWindow) {
           mainWindow.webContents.send('voice:audio_stream', data);
         } else if (data.type === 'stateChange') {
           mainWindow.webContents.send('voice:stateChange', data);
+        } else if (data.type === 'ai_error') {
+          mainWindow.webContents.send('voice:ai_error', data);
         } else {
           mainWindow.webContents.send('voice:response', data);
         }
@@ -189,6 +191,16 @@ function register(ipc, mainWindow) {
       return { success: true };
     } catch (e) {
       console.error('voice:speakOnce error:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Hentikan audio speakOnce yang sedang diputar (dipanggil saat navigasi keluar halaman)
+  ipc.handle('voice:stopSpeaking', () => {
+    try {
+      voiceService.cancelSpeakOnce();
+      return { success: true };
+    } catch (e) {
       return { success: false, error: e.message };
     }
   });

@@ -13,6 +13,7 @@ class GeminiLiveService {
     this._manualMode = false;
     this.audioBufferQueue = [];
     this.onResponseCallback = null;
+    this._speakSession = null; // referensi ke sesi speakOnce aktif
 
     // Konfigurasi Tools yang bisa dipanggil oleh Gemini
     this.tools = [{
@@ -76,6 +77,18 @@ class GeminiLiveService {
     console.log("🚀 Menghubungkan ke Gemini Live API...");
     this.isConnecting = true;
     try {
+      let apiKey = process.env.GEMINI_API_KEY;
+      try {
+        const { dbGet } = require('../../infrastructure/database/db');
+        const row = await dbGet(`SELECT value FROM settings WHERE key = 'gemini_api_key'`);
+        if (row && row.value) {
+          apiKey = row.value;
+        }
+      } catch (dbErr) {
+        console.error("Gagal membaca API key dari DB:", dbErr);
+      }
+      this.ai = new GoogleGenAI({ apiKey });
+
       // Kita gunakan model dari .env (default: gemini-1.5-flash-8b yang merupakan model termurah)
       const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-8b';
 
@@ -155,8 +168,10 @@ ATURAN KONFIRMASI DATA:
     } catch (error) {
       this.isConnecting = false;
       console.error("Gagal terhubung ke Gemini Live:", error);
+      this._emitResponse({ type: 'ai_error', message: 'AI Sedang Ada Gangguan' });
       return false;
     }
+
   }
 
   deactivate() {
@@ -179,6 +194,9 @@ ATURAN KONFIRMASI DATA:
    */
   async speakOnce(text, timeoutMs = 10000) {
     console.log('🔊 speakOnce:', text.substring(0, 60) + '...');
+    // Tutup sesi speakOnce sebelumnya jika masih aktif
+    this.cancelSpeakOnce();
+
     // Jika sudah ada sesi aktif, gunakan saja
     if (this.session) {
       try {
@@ -192,6 +210,16 @@ ATURAN KONFIRMASI DATA:
     let speakSession = null;
     const pendingText = `[SISTEM] Ucapkan persis dengan hangat dan ramah, tanpa tambahan: "${text}"`;
     try {
+      let apiKey = process.env.GEMINI_API_KEY;
+      try {
+        const { dbGet } = require('../../infrastructure/database/db');
+        const row = await dbGet(`SELECT value FROM settings WHERE key = 'gemini_api_key'`);
+        if (row && row.value) {
+          apiKey = row.value;
+        }
+      } catch (dbErr) {}
+      this.ai = new GoogleGenAI({ apiKey });
+
       speakSession = await this.ai.live.connect({
         model: modelName,
         config: {
@@ -232,9 +260,20 @@ ATURAN KONFIRMASI DATA:
         turnComplete: true
       });
 
-      setTimeout(() => { try { speakSession.close(); } catch (_) {} }, timeoutMs);
+      this._speakSession = speakSession;
+      setTimeout(() => { this.cancelSpeakOnce(); }, timeoutMs);
     } catch (err) {
       console.error('speakOnce connect error:', err);
+      this._emitResponse({ type: 'ai_error', message: 'AI Sedang Ada Gangguan' });
+    }
+  }
+
+  /** Hentikan sesi speakOnce yang sedang aktif */
+  cancelSpeakOnce() {
+    if (this._speakSession) {
+      console.log('🔇 Cancelling active speakOnce session');
+      try { this._speakSession.close(); } catch (_) {}
+      this._speakSession = null;
     }
   }
 

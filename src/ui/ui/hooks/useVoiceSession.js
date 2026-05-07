@@ -35,7 +35,7 @@ export default function useVoiceSession(disableMic = false) {
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const audioListenerRegistered = useRef(false);
-  
+
   // Playback Refs
   const playbackCtxRef = useRef(null);
   const nextPlayTimeRef = useRef(0);
@@ -147,12 +147,12 @@ export default function useVoiceSession(disableMic = false) {
 
   // ── PCM Playback via AudioContext BufferSource ──
   // AudioContext sangat bisa menangani PCM stream (gapless) jika diputar secara berurutan.
-  
+
   const initPlaybackContext = useCallback(() => {
     if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
       playbackCtxRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
       nextPlayTimeRef.current = 0;
-      
+
       // Buat AnalyserNode untuk lipsync sinkron dengan speaker
       const analyser = playbackCtxRef.current.createAnalyser();
       analyser.fftSize = 512;
@@ -162,7 +162,7 @@ export default function useVoiceSession(disableMic = false) {
       const dataArray = new Float32Array(analyser.frequencyBinCount);
       const freqData = new Uint8Array(analyser.frequencyBinCount);
       let smoothedRms = 0;
-      
+
       const updateLipsync = () => {
         if (playbackCtxRef.current && playbackCtxRef.current.state === 'running') {
           analyser.getFloatTimeDomainData(dataArray);
@@ -174,8 +174,8 @@ export default function useVoiceSession(disableMic = false) {
             sumSq += dataArray[i] * dataArray[i];
           }
           const rms = Math.sqrt(sumSq / dataArray.length);
-          const displayRms = rms * 20000; 
-          
+          const displayRms = rms * 20000;
+
           if (displayRms > smoothedRms) {
             smoothedRms = smoothedRms * 0.3 + displayRms * 0.7;
           } else {
@@ -213,11 +213,11 @@ export default function useVoiceSession(disableMic = false) {
             }
           }
           window.currentPhoneme = targetPhoneme;
-          
+
           if (!window.lipsyncTick) window.lipsyncTick = 0;
           window.lipsyncTick++;
           if (window.lipsyncTick % 30 === 0 && rms > 0.001) {
-             console.log(`[AudioAnalyser] Phoneme: ${targetPhoneme} | PixiRMS: ${Math.round(smoothedRms)}`);
+            console.log(`[AudioAnalyser] Phoneme: ${targetPhoneme} | PixiRMS: ${Math.round(smoothedRms)}`);
           }
         } else {
           window.currentVoiceRMS = 0;
@@ -228,7 +228,7 @@ export default function useVoiceSession(disableMic = false) {
       requestAnimationFrame(updateLipsync);
     }
   }, []);
-  
+
   const pcmToFloat32Array = useCallback((base64pcm) => {
     const binaryString = window.atob(base64pcm);
     const len = binaryString.length;
@@ -245,7 +245,7 @@ export default function useVoiceSession(disableMic = false) {
 
   const queuePCMChunk = useCallback(async (base64data) => {
     initPlaybackContext();
-    
+
     const ctx = playbackCtxRef.current;
     if (ctx.state === 'suspended') await ctx.resume();
 
@@ -268,7 +268,7 @@ export default function useVoiceSession(disableMic = false) {
     if (playbackEndTimerRef.current) clearTimeout(playbackEndTimerRef.current);
     playbackEndTimerRef.current = setTimeout(() => {
       setIsPlaying(false);
-      if (electron) electron.ipcRenderer.invoke('voice:audioEnded').catch(() => {});
+      if (electron) electron.ipcRenderer.invoke('voice:audioEnded').catch(() => { });
     }, (nextPlayTimeRef.current - now) * 1000 + 100);
 
     src.start(startAt);
@@ -325,7 +325,7 @@ export default function useVoiceSession(disableMic = false) {
     setIsListening(false);
     setIsProcessing(false);
     closeMic();
-    
+
     // Hentikan pemutaran PCM jika sedang berjalan
     if (playbackCtxRef.current && playbackCtxRef.current.state !== 'closed') {
       playbackCtxRef.current.suspend(); // Atau close()
@@ -429,7 +429,7 @@ export default function useVoiceSession(disableMic = false) {
         if (electron) {
           electron.ipcRenderer.invoke('voice:sendToGemini',
             '[SISTEM] Kamu baru saja terhubung. Berikan sambutan yang hangat, singkat, dan ceria kepada warga. Perkenalkan dirimu sebagai Sinta. Tanyakan dengan ramah: ada yang bisa Sinta bantu hari ini?'
-          ).catch(() => {});
+          ).catch(() => { });
         }
       } else if (data.state === 'LISTENING' || data.state === 'BUFFERING') {
         setIsListening(true);
@@ -442,7 +442,7 @@ export default function useVoiceSession(disableMic = false) {
         // Pastikan AudioContext diinisialisasi agar audio bisa diputar
         initPlaybackContext();
         if (playbackCtxRef.current.state === 'suspended') {
-          playbackCtxRef.current.resume().catch(() => {});
+          playbackCtxRef.current.resume().catch(() => { });
         }
       } else if (data.state === 'STANDBY' || data.state === 'MANUAL_MODE') {
         setIsListening(false);
@@ -458,12 +458,31 @@ export default function useVoiceSession(disableMic = false) {
       setAiResponse(`Terjadi kesalahan: ${data.message}`);
     };
 
+    const handleAiError = (event, data) => {
+      setIsProcessing(false);
+      setIsConnecting(false);
+      setAiResponse(data.message || 'AI Sedang Ada Gangguan');
+
+      if ('speechSynthesis' in window) {
+        const msg = new SpeechSynthesisUtterance('AI sedang ada gangguan , Silakan Hubungi Operator');
+        msg.lang = 'id-ID';
+        window.speechSynthesis.speak(msg);
+      }
+
+      if (electron) {
+        electron.ipcRenderer.invoke('voice:enterManualMode');
+      }
+      // Deactivate dipanggil agak belakangan agar pesan error sempat terbaca
+      setTimeout(() => deactivate(), 3000);
+    };
+
     electron.ipcRenderer.on('voice:transcript', handleTranscript);
     electron.ipcRenderer.on('voice:interim', handleInterim);
     electron.ipcRenderer.on('voice:response', handleResponse);
     electron.ipcRenderer.on('voice:stateChange', handleStateChange);
     electron.ipcRenderer.on('session:update', handleSessionUpdate);
     electron.ipcRenderer.on('voice:error', handleError);
+    electron.ipcRenderer.on('voice:ai_error', handleAiError);
     // Selalu listen audio_stream agar speakOnce juga bisa memutar audio tanpa activate()
     const handleAudioStream = (event, data) => {
       if (data && data.audioData) queuePCMChunk(data.audioData);
@@ -477,6 +496,7 @@ export default function useVoiceSession(disableMic = false) {
       electron.ipcRenderer.removeListener('voice:stateChange', handleStateChange);
       electron.ipcRenderer.removeListener('session:update', handleSessionUpdate);
       electron.ipcRenderer.removeListener('voice:error', handleError);
+      electron.ipcRenderer.removeListener('voice:ai_error', handleAiError);
       electron.ipcRenderer.removeListener('voice:audio_stream', handleAudioStream);
     };
   }, [playAudio, queuePCMChunk]);

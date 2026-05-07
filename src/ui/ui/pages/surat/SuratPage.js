@@ -34,6 +34,37 @@ const SuratPage = () => {
   const [slotInput, setSlotInput] = useState('');
   const keyboardRef = useRef(null);
 
+  // Carousel state (Page index)
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [isSliding, setIsSliding] = useState(false);
+  const touchStartXRef = useRef(null);
+
+  const CARDS_PER_PAGE = 9;
+  const totalPages = Math.ceil(templates.length / CARDS_PER_PAGE);
+
+  const handleCarouselSlide = (direction) => {
+    if (isSliding || totalPages <= 1) return;
+    setIsSliding(true);
+    setTimeout(() => setIsSliding(false), 450);
+    setActiveCardIndex(i => {
+      if (direction === 'next') return Math.min(i + 1, totalPages - 1);
+      return Math.max(i - 1, 0);
+    });
+  };
+
+  const handleTouchStart = (e) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartXRef.current === null) return;
+    const diff = touchStartXRef.current - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      handleCarouselSlide(diff > 0 ? 'next' : 'prev');
+    }
+    touchStartXRef.current = null;
+  };
+
   const onKeyboardChange = (input) => {
     setSlotInput(input);
   };
@@ -70,7 +101,7 @@ const SuratPage = () => {
     }
     electron.ipcRenderer.invoke('kiosk:api:getTemplatesSurat')
       .then(res => {
-        console.log('[SuratPage] API templates response:', JSON.stringify(res?.data?.slice(0,2)));
+        console.log('[SuratPage] API templates response:', JSON.stringify(res?.data?.slice(0, 2)));
         if (res && res.success && Array.isArray(res.data)) {
           // Deduplication berdasarkan id
           const seen = new Set();
@@ -84,7 +115,7 @@ const SuratPage = () => {
             .map((t, i) => {
               let parsedVars = t.input_variables || t.fields || t.slots || [];
               if (typeof parsedVars === 'string') {
-                try { parsedVars = JSON.parse(parsedVars); } catch(e) { parsedVars = []; }
+                try { parsedVars = JSON.parse(parsedVars); } catch (e) { parsedVars = []; }
               }
               return {
                 id: t.id,
@@ -118,6 +149,19 @@ const SuratPage = () => {
     const prompt = `[SISTEM] Data warga telah terverifikasi. Kini warga berada di halaman pilih jenis surat. Surat yang tersedia: ${daftarSurat}. Tolong tanyakan kepada warga dengan ramah: surat apa yang ingin dibuat hari ini? Tunggu jawaban warga.`;
     electron.ipcRenderer.invoke('voice:sendToGemini', prompt);
   }, [fromVoice, templatesLoading, templates]);
+
+  // Sapaan untuk user yang masuk manual (bukan dari voice AI)
+  const hasManualGreetRef = useRef(false);
+  useEffect(() => {
+    if (fromVoice || templatesLoading || hasManualGreetRef.current) return;
+    hasManualGreetRef.current = true;
+    if (electron) {
+      electron.ipcRenderer.invoke(
+        'voice:speakOnce',
+        'Silakan pilih jenis surat yang ingin Anda ajukan dengan menekan salah satu pilihan di layar.'
+      ).catch(() => { });
+    }
+  }, [fromVoice, templatesLoading]);
 
   useEffect(() => {
     // Poll session state setiap 500ms — TIDAK PAKAI LISTENER
@@ -192,6 +236,18 @@ const SuratPage = () => {
         // Mulai slot filling
         const result = await electron.ipcRenderer.invoke('voice:startSlotFillingDirect');
         console.log('[SuratPage] startSlotFillingDirect result:', result);
+
+        // Jika user manual (bukan voice), ucapkan panduan isi data
+        if (!fromVoice && result?.success) {
+          const fields = (template.input_variables || [])
+            .filter(f => f.key !== 'nik')
+            .map(f => f.label || f.key)
+            .join(', ');
+          electron.ipcRenderer.invoke(
+            'voice:speakOnce',
+            `Anda memilih ${template.nama}. Silakan lengkapi data yang diperlukan: ${fields || 'tidak ada data tambahan'}. Tekan ikon pensil di samping setiap kolom untuk mengisi secara manual.`
+          ).catch(() => { });
+        }
         if (!result || !result.success) {
           console.warn('[SuratPage] Slot filling gagal, reset selectedSurat');
           setSelectedSurat(null);
@@ -238,7 +294,7 @@ const SuratPage = () => {
 
     electron.ipcRenderer.on('voice:response', handleVoiceResponse);
     return () => electron.ipcRenderer.removeListener('voice:response', handleVoiceResponse);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templates, selectedSurat, fromVoice]);
 
   // Icon defaults kalau backend tidak menyertakan
@@ -269,164 +325,237 @@ const SuratPage = () => {
   ];
 
   return (
-    <div className="page-enter" style={{ textAlign: 'center', width: '100%', maxWidth: '1600px', margin: '0 auto', padding: '20px 40px' }}>
+    <div className="page-enter" style={{ width: '100%', maxWidth: '1600px', margin: '0 auto', padding: '0 24px 12px 24px', textAlign: 'center' }}>
 
-      {/* Header — Warga Info Mini Card */}
-      {warga && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 24,
-          padding: '24px 32px',
-          background: 'rgba(255,255,255,0.02)',
-          borderRadius: '24px',
-          border: '1px solid rgba(255,255,255,0.05)',
-          marginBottom: 40,
-          textAlign: 'left',
-          boxShadow: '0 8px 32px var(--bg-glass)'
-        }}>
-          <div style={{
-            width: 80, height: 80, borderRadius: '50%', 
-            background: 'linear-gradient(135deg, #6366f1, #a855f7)', 
-            color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-            fontWeight: 700, fontSize: 36, boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)'
-          }}>
-            {warga.nama.charAt(0).toUpperCase()}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 28, color: 'var(--text-primary)', letterSpacing: '0.5px' }}>
-              {warga.nama}
-            </div>
-            <div style={{ fontSize: 18, color: 'var(--text-secondary)', marginTop: 8 }}>
-              NIK: {warga.nik} • {warga.alamat}
-            </div>
-          </div>
-          <button
-            className="btn btn-secondary"
-            style={{ fontSize: 18, padding: '16px 32px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}
-            onClick={() => navigate('/profil-warga', { state: { nik } })}
-          >
-            Lihat Profil
-          </button>
-        </div>
-      )}
+      {/* Page Title Dihapus Sesuai Permintaan */}
 
-      {/* Page Title */}
-      <h2 className="page-title" style={{ fontWeight: 300, letterSpacing: '1px', fontSize: 42, marginBottom: 16 }}>
-        {selectedSurat && phase === 'SLOT_FILLING' ? `Melengkapi: ${selectedSurat}` :
-         selectedSurat && phase === 'CONFIRMATION' ? `Konfirmasi: ${selectedSurat}` :
-         'Pilih Jenis Surat'}
-      </h2>
-      <p className="page-subtitle" style={{ marginBottom: 32, fontSize: 20 }}>
-        {selectedSurat && phase === 'SLOT_FILLING' ? 'Silakan lengkapi data surat melalui asisten suara' :
-         selectedSurat && phase === 'CONFIRMATION' ? 'Periksa data berikut dan konfirmasi' :
-         'Pilih jenis surat yang ingin diurus'}
-      </p>
+      {/* Syarat Dokumen Dihapus Sesuai Permintaan */}
 
-      {/* Tampilkan Persyaratan jika ada dan sedang dalam proses pengisian */}
-      {selectedSurat && sessionData && sessionData.persyaratan && sessionData.persyaratan.length > 0 && (
-        <div style={{
-          background: 'rgba(245, 158, 11, 0.05)',
-          border: '1px solid rgba(245, 158, 11, 0.2)',
-          borderRadius: 16,
-          padding: '16px 32px',
-          display: 'inline-block',
-          marginBottom: 32,
-          color: 'var(--text-secondary)',
-          fontSize: 18,
-          textAlign: 'left'
-        }}>
-          <strong style={{ color: '#f59e0b' }}>Syarat Dokumen: </strong>
-          {sessionData.persyaratan.join(', ')}
-        </div>
-      )}
-
-      {/* Surat Selection — show if no selectedSurat OR if selectedSurat but no active slot filling */}
+      {/* Surat Selection — Horizontal Carousel */}
       {(!selectedSurat || (selectedSurat && (!sessionData || (sessionData.phase !== 'SLOT_FILLING' && sessionData.phase !== 'CONFIRMATION')))) && (
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', 
-          gap: 24, 
-          marginTop: 16,
-          padding: '16px 8px'
-        }}>
+        <div style={{ marginTop: 'clamp(8px, 1vh, 16px)', width: '100%' }}>
+
           {templatesLoading ? (
-            <>
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-              <div className="shimmer" style={{ height: 120, borderRadius: 20 }} />
-            </>
+            <div style={{ display: 'flex', gap: 24, padding: '4px 64px' }}>
+              <div className="shimmer" style={{ flex: 1, height: 200, borderRadius: 20 }} />
+              <div className="shimmer" style={{ flex: 1, height: 200, borderRadius: 20 }} />
+              <div className="shimmer" style={{ flex: 1, height: 200, borderRadius: 20 }} />
+            </div>
           ) : templates.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
               <p>Tidak ada template surat tersedia dari server.</p>
             </div>
           ) : (
-            templates.map((surat, i) => (
-              <button
-                key={surat.id || i}
-                className="glass-card"
-                onClick={() => handlePilihSurat(surat)}
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 20,
-                  textAlign: 'left',
-                  padding: '24px',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  background: 'linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
-                  borderRadius: '20px',
-                  minHeight: '120px',
-                  boxShadow: '0 6px 20px rgba(0,0,0,0.1)',
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)';
-                  e.currentTarget.style.boxShadow = `0 16px 32px ${(surat.color || ICON_COLORS[i % 6])}25`;
-                  e.currentTarget.style.borderColor = `${surat.color || ICON_COLORS[i % 6]}50`;
-                  e.currentTarget.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)';
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)';
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
-                  e.currentTarget.style.background = 'linear-gradient(145deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)';
-                }}
-              >
-                <div style={{
-                  fontSize: 32,
-                  fontWeight: 800,
-                  width: 72,
-                  height: 72,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 20,
-                  color: surat.color || ICON_COLORS[i % 6],
-                  background: `${surat.color || ICON_COLORS[i % 6]}10`,
-                  border: `2px solid ${surat.color || ICON_COLORS[i % 6]}30`
-                }}>
-                  {surat.nama.charAt(0).toUpperCase()}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{
-                    fontSize: 22,
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginBottom: 8,
-                    letterSpacing: '0.5px'
-                  }}>
-                    {surat.nama}
+            (() => {
+              const chunkedTemplates = [];
+              for (let i = 0; i < templates.length; i += CARDS_PER_PAGE) {
+                chunkedTemplates.push(templates.slice(i, i + CARDS_PER_PAGE));
+              }
+
+              return (
+                <>
+                  {/* Carousel Track Wrapper */}
+                  <div
+                    style={{ position: 'relative', overflow: 'hidden', width: '100%', padding: '8px 0', touchAction: 'pan-y' }}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                  >
+                    {/* Sliding Track */}
+                    <div style={{
+                      display: 'flex',
+                      transform: `translateX(calc(-${activeCardIndex * 100}%))`,
+                      transition: isSliding ? 'transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'none',
+                      willChange: 'transform',
+                    }}>
+                      {chunkedTemplates.map((chunk, pageIndex) => (
+                        <div
+                          key={pageIndex}
+                          style={{
+                            minWidth: '100%',
+                            padding: '0 clamp(100px, 8vw, 140px)',
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: 'clamp(8px, 1vw, 12px)',
+                          }}>
+                            {chunk.map((surat, localIndex) => {
+                              const i = pageIndex * CARDS_PER_PAGE + localIndex;
+                              return (
+                                <div
+                                  key={surat.id || i}
+                                  className="glass-card"
+                                  onClick={() => handlePilihSurat(surat)}
+                                  style={{
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 'clamp(8px, 1vw, 16px)',
+                                    textAlign: 'left',
+                                    padding: 'clamp(12px, 1vw, 20px)',
+                                    borderRadius: '20px',
+                                    minHeight: '95px',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    width: '100%',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                                    transition: 'transform 0.2s, box-shadow 0.2s, border 0.2s, background 0.2s',
+                                    background: 'rgba(30, 41, 88, 0.6)',
+                                  }}
+                                  onMouseOver={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-4px)';
+                                    e.currentTarget.style.borderColor = `${surat.color || ICON_COLORS[i % 6]}60`;
+                                    e.currentTarget.style.boxShadow = `0 12px 32px ${surat.color || ICON_COLORS[i % 6]}25`;
+                                  }}
+                                  onMouseOut={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+                                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+                                  }}
+                                >
+                                  {/* Top accent bar */}
+                                  <div style={{
+                                    height: 6,
+                                    background: surat.color
+                                      ? `linear-gradient(90deg, ${surat.color}, ${surat.color}88)`
+                                      : 'var(--gradient-accent)',
+                                    position: 'absolute',
+                                    top: 0, left: 0, right: 0,
+                                    borderRadius: '20px 20px 0 0',
+                                  }} />
+
+                                  {/* Icon */}
+                                  <div style={{
+                                    fontSize: 'clamp(28px, 3.5vw, 48px)',
+                                    fontWeight: 800,
+                                    width: 'clamp(60px, 6.5vw, 96px)',
+                                    height: 'clamp(60px, 6.5vw, 96px)',
+                                    flexShrink: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: 20,
+                                    color: surat.color || ICON_COLORS[i % 6],
+                                    background: `${surat.color || ICON_COLORS[i % 6]}15`,
+                                    border: `2px solid ${surat.color || ICON_COLORS[i % 6]}35`,
+                                    boxShadow: `0 8px 24px ${surat.color || ICON_COLORS[i % 6]}20`,
+                                  }}>
+                                    {surat.nama.charAt(0).toUpperCase()}
+                                  </div>
+
+                                  {/* Text */}
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{
+                                      fontSize: 'clamp(18px, 2.2vw, 32px)',
+                                      fontWeight: 700,
+                                      color: 'var(--text-primary)',
+                                      marginBottom: 2,
+                                      letterSpacing: '0.4px',
+                                    }}>
+                                      {surat.nama}
+                                    </div>
+                                    <div style={{
+                                      fontSize: 'clamp(13px, 1.4vw, 20px)',
+                                      color: 'var(--text-secondary)',
+                                      lineHeight: 1.5,
+                                    }}>
+                                      {surat.deskripsi || 'Klik untuk memilih jenis surat ini'}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Prev Arrow */}
+                    {activeCardIndex > 0 && (
+                      <button
+                        onClick={() => handleCarouselSlide('prev')}
+                        style={{
+                          position: 'absolute',
+                          left: 'clamp(8px, 1vw, 16px)',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: 'clamp(48px, 5vw, 64px)',
+                          height: 'clamp(48px, 5vw, 64px)',
+                          borderRadius: '50%',
+                          background: '#3b82f6',
+                          border: 'none',
+                          color: 'white',
+                          fontSize: 'clamp(24px, 2.5vw, 36px)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
+                          transition: 'all 0.2s',
+                          zIndex: 10,
+                          fontWeight: 700
+                        }}
+                      >‹</button>
+                    )}
+
+                    {/* Next Arrow */}
+                    {activeCardIndex < totalPages - 1 && (
+                      <button
+                        onClick={() => handleCarouselSlide('next')}
+                        style={{
+                          position: 'absolute',
+                          right: 'clamp(8px, 1vw, 16px)',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: 'clamp(48px, 5vw, 64px)',
+                          height: 'clamp(48px, 5vw, 64px)',
+                          borderRadius: '50%',
+                          background: '#3b82f6',
+                          border: 'none',
+                          color: 'white',
+                          fontSize: 'clamp(24px, 2.5vw, 36px)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: '0 8px 24px rgba(59, 130, 246, 0.4)',
+                          transition: 'all 0.2s',
+                          zIndex: 10,
+                          fontWeight: 700
+                        }}
+                      >›</button>
+                    )}
                   </div>
-                  <div style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    {surat.deskripsi}
-                  </div>
-                </div>
-              </button>
-            ))
+
+                  {/* Dot Indicators */}
+                  {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 12 }}>
+                      {chunkedTemplates.map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { if (!isSliding) setActiveCardIndex(i); }}
+                          style={{
+                            width: i === activeCardIndex ? 36 : 12,
+                            height: 12,
+                            borderRadius: 6,
+                            background: i === activeCardIndex
+                              ? 'var(--accent-primary)'
+                              : 'rgba(255,255,255,0.2)',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 0,
+                            transition: 'all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()
           )}
         </div>
       )}
@@ -434,14 +563,14 @@ const SuratPage = () => {
       {/* Slot Filling Progress — hanya tampil jika benar-benar sedang slot filling */}
       {selectedSurat && sessionData && (sessionData.phase === 'SLOT_FILLING' || sessionData.phase === 'CONFIRMATION') && (
 
-        <div className="interview-panel" style={{ marginTop: 24, borderRadius: 32, padding: '48px 64px', background: 'linear-gradient(180deg, rgba(30,41,59,0.4) 0%, rgba(15,23,42,0.7) 100%)', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', maxWidth: 1200, margin: '0 auto' }}>
-          <div className="interview-title" style={{ fontSize: 36, fontWeight: 300, letterSpacing: '0.5px', marginBottom: 16 }}>
+        <div className="interview-panel glass-card" style={{ marginTop: 16, borderRadius: 24, padding: 'clamp(24px, 3.5vw, 48px) clamp(24px, 4.5vw, 64px)', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', maxWidth: 1600, margin: '0 auto', background: 'rgba(30, 41, 88, 0.6)' }}>
+          <div className="interview-title" style={{ fontSize: 'clamp(26px, 3.2vw, 48px)', fontWeight: 700, letterSpacing: '0.5px', marginBottom: 16, textAlign: 'center' }}>
             {phase === 'CONFIRMATION' ? 'Data Lengkap — Tahap Konfirmasi' : 'Mengumpulkan Data Surat'}
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 20, marginBottom: 40 }}>
-            {phase === 'CONFIRMATION' 
-              ? 'Konfirmasi melalui asisten suara: "Ya, benar" atau "Tidak, ubah"' 
-              : 'Jawab pertanyaan dari asisten suara SINTA'}
+          <p style={{ color: 'var(--text-secondary)', fontSize: 'clamp(15px, 1.8vw, 26px)', marginBottom: 'clamp(24px, 3vw, 48px)', textAlign: 'center' }}>
+            {phase === 'CONFIRMATION'
+              ? 'Konfirmasi melalui asisten suara: "Ya, benar" atau "Tidak, ubah"'
+              : selectedSurat}
           </p>
 
           {sessionData.slots && sessionData.slotDefs && (
@@ -450,75 +579,75 @@ const SuratPage = () => {
                 const def = sessionData.slotDefs.find(d => d.key === key);
                 const label = def ? def.label : key;
                 return (
-                <div key={key} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 24,
-                  padding: '24px 32px',
-                  borderRadius: 20,
-                  background: value ? 'rgba(52, 211, 153, 0.05)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255,255,255,0.02)'),
-                  border: `1px solid ${value ? 'rgba(52, 211, 153, 0.2)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255,255,255,0.05)')}`,
-                  transition: 'all 0.3s ease',
-                  cursor: !value ? 'pointer' : 'default'
-                }}
-                onClick={() => {
-                  if (editingSlot !== key) { // Hapus pengecekan !value agar bisa diedit kapan saja
-                    setEditingSlot(key);
-                    setSlotInput(value || '');
-                    if (keyboardRef.current) {
-                      keyboardRef.current.setInput(value || '');
-                    }
-                  }
-                }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    background: value ? 'var(--accent-success)' : (key === sessionData.current_slot ? 'var(--accent-light)' : 'rgba(255,255,255,0.05)'),
-                  }}>
-                  </div>
-                  <span style={{ flex: 1, fontSize: 24, color: value ? 'white' : 'var(--text-secondary)', fontWeight: value ? 500 : 400, textAlign: 'left' }}>{label}</span>
-                  
-                  {editingSlot === key ? (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <span style={{
-                        fontSize: 24,
-                        fontWeight: 600,
-                        color: 'var(--accent-primary)',
-                        animation: 'pulse 1.5s infinite'
-                      }}>
-                        Ketik di keyboard bawah...
-                      </span>
-                    </div>
-                  ) : (
-                    <span style={{
-                      fontSize: 24,
-                      fontWeight: 600,
-                      color: value ? 'var(--accent-success)' : (key === sessionData.current_slot ? 'var(--accent-light)' : 'var(--text-muted)'),
-                    }}>
-                      {value || (key === sessionData.current_slot ? 'Tunggu suara / Klik ketik' : 'Menunggu...')}
-                    </span>
-                  )}
-
-                  {/* Tampilkan tombol edit jika baris ini sedang tidak diedit */}
-                  {editingSlot !== key && (
-                    <button
-                      title="Edit manual"
-                      style={{
-                        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                        borderRadius: 8, padding: '10px 16px', cursor: 'pointer',
-                        color: value ? 'var(--accent-success)' : 'var(--text-muted)', fontSize: 20, flexShrink: 0
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
+                  <div key={key} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'clamp(12px, 1.5vw, 24px)',
+                    padding: 'clamp(14px, 1.5vw, 24px) clamp(16px, 2vw, 32px)',
+                    borderRadius: 16,
+                    background: value ? 'rgba(52, 211, 153, 0.05)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255,255,255,0.02)'),
+                    border: `1px solid ${value ? 'rgba(52, 211, 153, 0.2)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255,255,255,0.05)')}`,
+                    transition: 'all 0.3s ease',
+                    cursor: !value ? 'pointer' : 'default'
+                  }}
+                    onClick={() => {
+                      if (editingSlot !== key) { // Hapus pengecekan !value agar bisa diedit kapan saja
                         setEditingSlot(key);
                         setSlotInput(value || '');
                         if (keyboardRef.current) {
                           keyboardRef.current.setInput(value || '');
                         }
-                      }}
-                    >✏️</button>
-                  )}
+                      }
+                    }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      background: value ? 'var(--accent-success)' : (key === sessionData.current_slot ? 'var(--accent-light)' : 'rgba(255,255,255,0.05)'),
+                    }}>
+                    </div>
+                    <span style={{ flex: 1, fontSize: 'clamp(16px, 2.2vw, 32px)', color: value ? 'white' : 'var(--text-secondary)', fontWeight: value ? 600 : 500, textAlign: 'left' }}>{label}</span>
+
+                    {editingSlot === key ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <span style={{
+                          fontSize: 28,
+                          fontWeight: 600,
+                          color: 'var(--accent-primary)',
+                          animation: 'pulse 1.5s infinite'
+                        }}>
+                          Ketik di keyboard bawah...
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{
+                        fontSize: 'clamp(14px, 2vw, 32px)',
+                        fontWeight: 700,
+                        color: value ? 'var(--accent-success)' : (key === sessionData.current_slot ? 'var(--accent-light)' : 'var(--text-muted)'),
+                      }}>
+                        {value || (key === sessionData.current_slot ? 'Tunggu suara / Klik ketik' : 'Menunggu...')}
+                      </span>
+                    )}
+
+                    {/* Tampilkan tombol edit jika baris ini sedang tidak diedit */}
+                    {editingSlot !== key && (
+                      <button
+                        title="Edit manual"
+                        style={{
+                          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 12, padding: '16px 24px', cursor: 'pointer',
+                          color: value ? 'var(--accent-success)' : 'var(--text-muted)', fontSize: 28, flexShrink: 0
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingSlot(key);
+                          setSlotInput(value || '');
+                          if (keyboardRef.current) {
+                            keyboardRef.current.setInput(value || '');
+                          }
+                        }}
+                      >✏️</button>
+                    )}
                   </div>
                 );
               })}
@@ -526,111 +655,111 @@ const SuratPage = () => {
               {editingSlot && (() => {
                 const editingDef = sessionData.slotDefs.find(d => d.key === editingSlot);
                 const editingLabel = editingDef ? editingDef.label : editingSlot;
-                
+
                 return (
                   <>
-                  {/* Overlay transparan tipis agar fokus ke keyboard */}
-                <div 
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingSlot(null);
-                    setSlotInput('');
-                  }}
-                />
-                <div style={{
-                  position: 'fixed',
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  padding: '24px 32px 40px 32px',
-                  background: 'rgba(15,23,42,0.95)',
-                  backdropFilter: 'blur(16px)',
-                  borderTop: '1px solid rgba(255,255,255,0.1)',
-                  boxShadow: '0 -16px 48px rgba(0,0,0,0.6)',
-                  zIndex: 100,
-                  animation: 'slideUp 0.3s ease-out forwards'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, maxWidth: '1400px', margin: '0 auto 24px auto', gap: 24 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, position: 'relative' }}>
-                      <label style={{ color: 'var(--text-secondary)', fontSize: 20, fontWeight: 500, marginBottom: 8, textAlign: 'left' }}>
-                        Sedang Mengisi: <span style={{ color: 'white', fontWeight: 700 }}>{editingLabel}</span>
-                      </label>
-                      <input 
-                        type="text" 
-                        autoFocus
-                        value={slotInput}
-                        onChange={e => {
-                          setSlotInput(e.target.value);
-                          if (keyboardRef.current) {
-                            keyboardRef.current.setInput(e.target.value);
-                          }
-                        }}
-                        onKeyDown={e => { if (e.key === 'Enter') handleSaveSlot(editingSlot); }}
-                        placeholder={`Ketik ${editingLabel} di sini...`}
-                        style={{
-                          width: '100%',
-                          background: 'rgba(0,0,0,0.5)',
-                          border: '2px solid rgba(255,255,255,0.2)',
-                          color: 'white',
-                          padding: '24px 32px',
-                          borderRadius: 16,
-                          fontSize: 32,
-                          outline: 'none',
-                          boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.5)'
-                        }}
-                      />
-                    </div>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleSaveSlot(editingSlot); }} 
-                      style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', fontSize: 24, padding: '24px 48px', borderRadius: 16, cursor: 'pointer', fontWeight: 700, boxShadow: '0 8px 24px rgba(16,185,129,0.4)' }}
-                    >
-                      SIMPAN
-                    </button>
-                    <button 
+                    {/* Overlay transparan tipis agar fokus ke keyboard */}
+                    <div
+                      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingSlot(null);
                         setSlotInput('');
                       }}
-                      style={{ background: 'rgba(239, 68, 68, 0.1)', border: '2px solid rgba(239, 68, 68, 0.3)', color: '#f87171', fontSize: 24, padding: '24px 40px', borderRadius: 16, cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      BATAL
-                    </button>
-                  </div>
-                  <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-                    <Keyboard
-                      keyboardRef={r => (keyboardRef.current = r)}
-                      onChange={onKeyboardChange}
-                      onKeyPress={onKeyPress}
-                      theme={"hg-theme-default my-dark-theme"}
-                      layout={{
-                        default: [
-                          "1 2 3 4 5 6 7 8 9 0 {bksp}",
-                          "Q W E R T Y U I O P",
-                          "A S D F G H J K L",
-                          "Z X C V B N M",
-                          "{space} {enter}"
-                        ]
-                      }}
-                      display={{
-                        "{bksp}": "Hapus",
-                        "{enter}": "OK / Simpan",
-                        "{space}": "Spasi"
-                      }}
-                      buttonTheme={[
-                        {
-                          class: "hg-dark-btn",
-                          buttons: "1 2 3 4 5 6 7 8 9 0 Q W E R T Y U I O P A S D F G H J K L Z X C V B N M"
-                        },
-                        {
-                          class: "hg-primary-btn",
-                          buttons: "{enter}"
-                        }
-                      ]}
                     />
-                  </div>
-                  <style>{`
+                    <div style={{
+                      position: 'fixed',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: '24px 32px 40px 32px',
+                      background: 'rgba(15,23,42,0.95)',
+                      backdropFilter: 'blur(16px)',
+                      borderTop: '1px solid rgba(255,255,255,0.1)',
+                      boxShadow: '0 -16px 48px rgba(0,0,0,0.6)',
+                      zIndex: 100,
+                      animation: 'slideUp 0.3s ease-out forwards'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, maxWidth: '1400px', margin: '0 auto 24px auto', gap: 24 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, position: 'relative' }}>
+                          <label style={{ color: 'var(--text-secondary)', fontSize: 20, fontWeight: 500, marginBottom: 8, textAlign: 'left' }}>
+                            Sedang Mengisi: <span style={{ color: 'white', fontWeight: 700 }}>{editingLabel}</span>
+                          </label>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={slotInput}
+                            onChange={e => {
+                              setSlotInput(e.target.value);
+                              if (keyboardRef.current) {
+                                keyboardRef.current.setInput(e.target.value);
+                              }
+                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') handleSaveSlot(editingSlot); }}
+                            placeholder={`Ketik ${editingLabel} di sini...`}
+                            style={{
+                              width: '100%',
+                              background: 'rgba(0,0,0,0.5)',
+                              border: '2px solid rgba(255,255,255,0.2)',
+                              color: 'white',
+                              padding: '24px 32px',
+                              borderRadius: 16,
+                              fontSize: 32,
+                              outline: 'none',
+                              boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.5)'
+                            }}
+                          />
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSaveSlot(editingSlot); }}
+                          style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', fontSize: 24, padding: '24px 48px', borderRadius: 16, cursor: 'pointer', fontWeight: 700, boxShadow: '0 8px 24px rgba(16,185,129,0.4)' }}
+                        >
+                          SIMPAN
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSlot(null);
+                            setSlotInput('');
+                          }}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: '2px solid rgba(239, 68, 68, 0.3)', color: '#f87171', fontSize: 24, padding: '24px 40px', borderRadius: 16, cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          BATAL
+                        </button>
+                      </div>
+                      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                        <Keyboard
+                          keyboardRef={r => (keyboardRef.current = r)}
+                          onChange={onKeyboardChange}
+                          onKeyPress={onKeyPress}
+                          theme={"hg-theme-default my-dark-theme"}
+                          layout={{
+                            default: [
+                              "1 2 3 4 5 6 7 8 9 0 {bksp}",
+                              "Q W E R T Y U I O P",
+                              "A S D F G H J K L",
+                              "Z X C V B N M",
+                              "{space} {enter}"
+                            ]
+                          }}
+                          display={{
+                            "{bksp}": "Hapus",
+                            "{enter}": "OK / Simpan",
+                            "{space}": "Spasi"
+                          }}
+                          buttonTheme={[
+                            {
+                              class: "hg-dark-btn",
+                              buttons: "1 2 3 4 5 6 7 8 9 0 Q W E R T Y U I O P A S D F G H J K L Z X C V B N M"
+                            },
+                            {
+                              class: "hg-primary-btn",
+                              buttons: "{enter}"
+                            }
+                          ]}
+                        />
+                      </div>
+                      <style>{`
                     @keyframes slideUp {
                       from { transform: translateY(100%); }
                       to { transform: translateY(0); }
@@ -664,18 +793,18 @@ const SuratPage = () => {
                       100% { opacity: 0.6; }
                     }
                   `}</style>
-                </div>
-                </>
+                    </div>
+                  </>
                 );
               })()}
             </div>
           )}
 
           {phase === 'CONFIRMATION' && (
-            <div style={{ marginTop: 48, display: 'flex', justifyContent: 'center', gap: 24 }}>
+            <div style={{ marginTop: 'clamp(24px, 3vw, 48px)', display: 'flex', justifyContent: 'center', gap: 24 }}>
               <button
                 className="btn btn-primary btn-lg"
-                style={{ padding: '24px 64px', fontSize: 28, borderRadius: 20, boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)' }}
+                style={{ padding: 'clamp(14px, 1.6vw, 24px) clamp(32px, 4vw, 64px)', fontSize: 'clamp(16px, 1.8vw, 28px)', borderRadius: 20, boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)' }}
                 onClick={async () => {
                   if (electron) {
                     try {
@@ -715,8 +844,19 @@ const SuratPage = () => {
 
       {/* Back Button */}
       <button
-        className="btn btn-secondary"
-        style={{ marginTop: 48, padding: '20px 48px', fontSize: 24, borderRadius: 16, marginBottom: 40, border: '2px solid rgba(255,255,255,0.1)' }}
+        style={{ 
+          marginTop: '12px', 
+          padding: 'clamp(12px, 1.4vw, 20px) clamp(24px, 3vw, 48px)', 
+          fontSize: 'clamp(14px, 1.6vw, 24px)', 
+          borderRadius: 16, 
+          marginBottom: 0, 
+          background: '#3b82f6', 
+          color: 'white',
+          border: 'none',
+          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+          cursor: 'pointer',
+          fontWeight: 600
+        }}
         onClick={() => {
           if (selectedSurat && !phase) {
             setSelectedSurat(null);

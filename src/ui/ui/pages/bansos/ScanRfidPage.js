@@ -32,6 +32,7 @@ const ScanRfidPage = () => {
 
     return () => {
       window.removeEventListener('click', handleGlobalClick);
+      if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
     };
   }, [isProcessing]);
 
