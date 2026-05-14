@@ -317,7 +317,7 @@ ATURAN KONFIRMASI DATA:
     this._chunkCount++;
 
     if (this._chunkCount % 64 === 1) {
-      const rmsLabel = (frontendRms || 0) > 0.01 ? '🔊 SUARA TERDETEKSI' : '🔇 hening';
+      const rmsLabel = (frontendRms || 0) > 0.003 ? '🔊 SUARA TERDETEKSI' : '🔇 hening';
       console.log(`🎤 Audio chunk #${this._chunkCount}, RMS: ${(frontendRms || 0).toFixed(4)} ${rmsLabel}`);
     }
 

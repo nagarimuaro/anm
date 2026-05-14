@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 const electron = window.require ? window.require('electron') : null;
+const MIC_INPUT_GAIN = 2.5;
 
 export default function useVoiceSession(disableMic = false) {
   // State
@@ -107,7 +108,7 @@ export default function useVoiceSession(disableMic = false) {
         // Float32 → Int16 → base64
         const int16 = new Int16Array(outputLength);
         for (let i = 0; i < outputLength; i++) {
-          const s = Math.max(-1, Math.min(1, resampled[i]));
+          const s = Math.max(-1, Math.min(1, resampled[i] * MIC_INPUT_GAIN));
           int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
         const bytes = new Uint8Array(int16.buffer);
