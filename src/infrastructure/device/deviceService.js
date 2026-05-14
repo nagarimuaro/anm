@@ -3,9 +3,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
-const packageJson = require('../../../package.json');
 
-const CURRENT_VERSION = packageJson.version || "1.0.0";
+const CURRENT_VERSION = app.getVersion() || "1.0.0";
 const HEARTBEAT_URL = 'https://sintanagari.cloud/api/device/heartbeat';
 const HEARTBEAT_TIMEOUT_MS = 20000;
 const HARDWARE_CHECK_TIMEOUT_MS = 5000;
