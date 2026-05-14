@@ -11,6 +11,7 @@ const electron = window.require ? window.require('electron') : null;
 const DEBUG_VOICE = window.process?.env?.DEBUG_VOICE === 'true';
 const MIC_INPUT_GAIN = 3.5;
 const MIC_WORKLET_CHUNK_SIZE = 2048;
+const MAX_AI_PLAYBACK_QUEUE_AGE_MS = 5000;
 
 export default function useVoiceSession(disableMic = false) {
   // State
@@ -46,6 +47,8 @@ export default function useVoiceSession(disableMic = false) {
   const isPlayingRef = useRef(false);
   const isGeminiPlaybackActiveRef = useRef(false);
   const activeSourcesRef = useRef(new Set());
+  const aiPlaybackPausedRef = useRef(null);
+  const queuedAiPlaybackRef = useRef([]);
 
   // ── Mic Management (Inline AudioWorklet — terbukti bekerja di test page) ──
   const openMic = useCallback(async () => {
@@ -480,6 +483,47 @@ export default function useVoiceSession(disableMic = false) {
     player.addEventListener('canplaythrough', onCanPlay);
   }, []);
 
+  const applyVoiceResponse = useCallback((response) => {
+    setIsProcessing(false);
+    setAiResponse(response.responseText || response.text || '');
+    setLastAction(response.action || null);
+    if (response.path) setLastPath(response.path);
+    if (response.nextPath) setLastNextPath(response.nextPath);
+    if (response.sessionData) setSessionData(response.sessionData);
+    if (response.timestamp) setLastActionTime(response.timestamp);
+    setPhase(response.phase || null);
+    if (response.audioUrl) playAudio(response.audioUrl);
+  }, [playAudio]);
+
+  const enqueueAiPlayback = useCallback((item) => {
+    const now = Date.now();
+    queuedAiPlaybackRef.current = queuedAiPlaybackRef.current
+      .filter(queued => now - queued.createdAt <= MAX_AI_PLAYBACK_QUEUE_AGE_MS);
+    queuedAiPlaybackRef.current.push({ ...item, createdAt: now });
+  }, []);
+
+  const pauseAiPlayback = useCallback((reason = 'route') => {
+    aiPlaybackPausedRef.current = { reason, since: Date.now() };
+    queuedAiPlaybackRef.current = [];
+    stopPlayback({ notifyAudioEnded: false });
+  }, [stopPlayback]);
+
+  const resumeAiPlayback = useCallback(() => {
+    aiPlaybackPausedRef.current = null;
+    const now = Date.now();
+    const queued = queuedAiPlaybackRef.current
+      .filter(item => now - item.createdAt <= MAX_AI_PLAYBACK_QUEUE_AGE_MS);
+    queuedAiPlaybackRef.current = [];
+
+    queued.forEach(item => {
+      if (item.type === 'response') {
+        applyVoiceResponse(item.response);
+      } else if (item.type === 'audio_stream') {
+        queuePCMChunk(item.audioData);
+      }
+    });
+  }, [applyVoiceResponse, queuePCMChunk]);
+
   // ── Keyboard Input ──
   const sendKeyboardInput = useCallback(async (slotKey, value) => {
     if (electron) {
@@ -504,15 +548,16 @@ export default function useVoiceSession(disableMic = false) {
     };
 
     const handleResponse = (event, response) => {
-      setIsProcessing(false);
-      setAiResponse(response.responseText || response.text || '');
-      setLastAction(response.action || null);
-      if (response.path) setLastPath(response.path);
-      if (response.nextPath) setLastNextPath(response.nextPath);
-      if (response.sessionData) setSessionData(response.sessionData);
-      if (response.timestamp) setLastActionTime(response.timestamp);
-      setPhase(response.phase || null);
-      if (response.audioUrl) playAudio(response.audioUrl);
+      if (response?.action === 'NAVIGATE') {
+        pauseAiPlayback('route-change');
+        applyVoiceResponse(response);
+        return;
+      }
+      if (aiPlaybackPausedRef.current && response?.action !== 'NAVIGATE') {
+        enqueueAiPlayback({ type: 'response', response });
+        return;
+      }
+      applyVoiceResponse(response);
     };
 
     const handleStateChange = async (event, data) => {
@@ -585,7 +630,12 @@ export default function useVoiceSession(disableMic = false) {
     electron.ipcRenderer.on('voice:ai_error', handleAiError);
     // Selalu listen audio_stream agar speakOnce juga bisa memutar audio tanpa activate()
     const handleAudioStream = (event, data) => {
-      if (data && data.audioData) queuePCMChunk(data.audioData);
+      if (!data || !data.audioData) return;
+      if (aiPlaybackPausedRef.current) {
+        enqueueAiPlayback({ type: 'audio_stream', audioData: data.audioData });
+        return;
+      }
+      queuePCMChunk(data.audioData);
     };
     electron.ipcRenderer.on('voice:audio_stream', handleAudioStream);
 
@@ -599,7 +649,7 @@ export default function useVoiceSession(disableMic = false) {
       electron.ipcRenderer.removeListener('voice:ai_error', handleAiError);
       electron.ipcRenderer.removeListener('voice:audio_stream', handleAudioStream);
     };
-  }, [playAudio, queuePCMChunk]);
+  }, [applyVoiceResponse, deactivate, enqueueAiPlayback, pauseAiPlayback, playBeep, queuePCMChunk]);
 
   // Audio onended handler
   useEffect(() => {
@@ -642,6 +692,8 @@ export default function useVoiceSession(disableMic = false) {
     activate,
     deactivate,
     resetConversation,
+    pauseAiPlayback,
+    resumeAiPlayback,
     toggle,
     playAudio,
     sendKeyboardInput,

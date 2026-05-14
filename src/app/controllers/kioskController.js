@@ -205,8 +205,15 @@ function register(ipc) {
     try {
       const { dbGet } = require('../../infrastructure/database/db');
       const row = await dbGet(`SELECT value FROM settings WHERE key = ?`, [key]);
-      return row ? row.value : null;
+      if (row && row.value) return row.value;
+      if (key === 'gemini_api_key') {
+        return process.env.GEMINI_API_KEY || null;
+      }
+      return null;
     } catch (e) {
+      if (key === 'gemini_api_key') {
+        return process.env.GEMINI_API_KEY || null;
+      }
       return null;
     }
   });

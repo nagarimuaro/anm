@@ -5,6 +5,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import speakAfterPageReady from '../../utils/speakAfterPageReady';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -24,10 +25,10 @@ const InputNikPage = () => {
     if (hasGreetedRef.current || fromVoice) return; // jangan ganggu jika dari voice AI
     hasGreetedRef.current = true;
     if (electron) {
-      electron.ipcRenderer.invoke(
-        'voice:speakOnce',
+      return speakAfterPageReady(
+        electron,
         'Silakan masukkan 16 digit Nomor Induk Kependudukan Anda menggunakan keypad di layar.'
-      ).catch(() => {});
+      );
     }
   }, []);
 

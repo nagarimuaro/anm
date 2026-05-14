@@ -18,7 +18,9 @@ const SettingsPage = () => {
   const [logoSize, setLogoSize] = useState(120);
   const [logoX, setLogoX] = useState(0);
   const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState(null);
+  const [maintenanceBusy, setMaintenanceBusy] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && electron) {
@@ -109,6 +111,50 @@ const SettingsPage = () => {
       if (window.confirm('Apakah Anda yakin ingin mematikan aplikasi Kiosk?')) {
         electron.ipcRenderer.invoke('kiosk:exitApp');
       }
+    }
+  };
+
+  const handleClearCache = async () => {
+    if (!electron || maintenanceBusy) return;
+    if (!window.confirm('Hapus cache audio dan data voice cache? Data aktivasi perangkat tidak akan dihapus.')) return;
+
+    setMaintenanceBusy(true);
+    try {
+      const res = await electron.ipcRenderer.invoke('device:clearCache');
+      if (res.success) {
+        alert(`Cache berhasil dihapus.\nFile dihapus: ${res.deletedFiles || 0}\nRecord cache dihapus: ${res.deletedRows || 0}`);
+      } else {
+        alert('Gagal menghapus cache: ' + (res.message || 'Terjadi kesalahan'));
+      }
+    } catch (error) {
+      alert('Gagal menghapus cache: ' + error.message);
+    } finally {
+      setMaintenanceBusy(false);
+    }
+  };
+
+  const handleResetDevice = async () => {
+    if (!electron || maintenanceBusy) return;
+    if (!window.confirm('Reset device akan menghapus aktivasi perangkat dari kiosk ini. Lanjutkan?')) return;
+    if (!window.confirm('Konfirmasi sekali lagi: perangkat perlu aktivasi ulang setelah reset.')) return;
+
+    setMaintenanceBusy(true);
+    try {
+      const res = await electron.ipcRenderer.invoke('device:reset');
+      if (res.success) {
+        setDeviceInfo(null);
+        alert('Device berhasil direset. Aplikasi akan kembali ke halaman aktivasi.');
+        if (window.testActivationStatus) {
+          window.testActivationStatus('UNACTIVATED');
+        }
+        navigate('/');
+      } else {
+        alert('Gagal reset device: ' + (res.message || 'Terjadi kesalahan'));
+      }
+    } catch (error) {
+      alert('Gagal reset device: ' + error.message);
+    } finally {
+      setMaintenanceBusy(false);
     }
   };
 
@@ -277,12 +323,21 @@ const SettingsPage = () => {
               <span style={{ color: 'white', fontSize: '18px' }}>Gemini API Key</span>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <input
-                  type="password"
+                  type={showApiKey ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Masukkan API Key Gemini..."
                   style={{ flex: 1, padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.3)', color: 'white', fontSize: 18 }}
                 />
+                <button
+                  className="btn"
+                  type="button"
+                  title={showApiKey ? 'Sembunyikan API Key' : 'Lihat API Key'}
+                  style={{ width: 58, background: 'rgba(255,255,255,0.12)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', fontWeight: 600, borderRadius: '12px', fontSize: 22 }}
+                  onClick={() => setShowApiKey(value => !value)}
+                >
+                  {showApiKey ? '🙈' : '👁️'}
+                </button>
                 <button
                   className="btn"
                   style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', fontWeight: 600, padding: '16px 32px', borderRadius: '12px', fontSize: 18 }}
@@ -334,6 +389,31 @@ const SettingsPage = () => {
                   Mengambil informasi perangkat...
                 </div>
               )}
+            </div>
+
+            <div className="glass-card" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: 16, textAlign: 'left', background: 'rgba(30, 41, 88, 0.6)' }}>
+              <h3 style={{ fontSize: 24, color: 'var(--accent-light)', marginBottom: 4 }}>Maintenance</h3>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.5 }}>
+                Bersihkan cache sementara atau reset aktivasi perangkat jika kiosk perlu dipasang ulang.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <button
+                  className="btn"
+                  disabled={maintenanceBusy}
+                  style={{ background: 'rgba(59, 130, 246, 0.18)', color: '#93c5fd', border: '2px solid rgba(59, 130, 246, 0.4)', fontWeight: 600, padding: '18px 16px', borderRadius: '16px', fontSize: 18, opacity: maintenanceBusy ? 0.6 : 1 }}
+                  onClick={handleClearCache}
+                >
+                  🧹 Hapus Cache
+                </button>
+                <button
+                  className="btn"
+                  disabled={maintenanceBusy}
+                  style={{ background: 'rgba(245, 158, 11, 0.16)', color: '#fbbf24', border: '2px solid rgba(245, 158, 11, 0.45)', fontWeight: 600, padding: '18px 16px', borderRadius: '16px', fontSize: 18, opacity: maintenanceBusy ? 0.6 : 1 }}
+                  onClick={handleResetDevice}
+                >
+                  🔁 Reset Device
+                </button>
+              </div>
             </div>
 
             <button

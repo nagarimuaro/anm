@@ -8,6 +8,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import speakAfterPageReady from '../../utils/speakAfterPageReady';
 const electron = window.require ? window.require('electron') : null;
 const ProfilWargaPage = () => {
   const navigate = useNavigate();
@@ -59,7 +60,7 @@ const ProfilWargaPage = () => {
     if (!warga || !electron || hasSynthesized.current) return;
     hasSynthesized.current = true;
     const pesan = `Data ditemukan atas nama ${warga.nama}. Silakan periksa data Anda pada layar, lalu tekan tombol Lanjut untuk memilih jenis surat.`;
-    electron.ipcRenderer.invoke('voice:speakOnce', pesan).catch(() => {});
+    return speakAfterPageReady(electron, pesan);
   }, [warga]);
 
   const handleLanjut = () => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import speakAfterPageReady from '../../utils/speakAfterPageReady';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -56,10 +57,10 @@ const BansosPage = () => {
     if (hasGreetedRef.current) return;
     hasGreetedRef.current = true;
     if (electron) {
-      electron.ipcRenderer.invoke(
-        'voice:speakOnce',
+      return speakAfterPageReady(
+        electron,
         'Silakan tunggu, kami sedang memproses data bantuan sosial Anda.'
-      ).catch(() => {});
+      );
     }
   }, []);
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import speakAfterPageReady from '../../utils/speakAfterPageReady';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -12,9 +13,10 @@ const ScanRfidPajakPage = () => {
   const inputRef = useRef(null);
 
   useEffect(() => {
+    let cancelGreeting = null;
     // Announce instruction
     if (electron && !isProcessing) {
-      electron.ipcRenderer.invoke('voice:speakOnce', 'Untuk mengecek Pajak P B B Anda, silakan tempelkan e-KTP Anda pada alat scanner sensor yang menyala di bawah layar.').catch(() => {});
+      cancelGreeting = speakAfterPageReady(electron, 'Untuk mengecek Pajak P B B Anda, silakan tempelkan e-KTP Anda pada alat scanner sensor yang menyala di bawah layar.');
     }
 
     // Always ensure input is focused to catch the HID reader
@@ -31,6 +33,7 @@ const ScanRfidPajakPage = () => {
     window.addEventListener('click', handleGlobalClick);
 
     return () => {
+      if (cancelGreeting) cancelGreeting();
       window.removeEventListener('click', handleGlobalClick);
       if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
     };

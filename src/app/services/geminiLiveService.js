@@ -21,6 +21,7 @@ class GeminiLiveService {
     this.audioBufferQueue = [];
     this.onResponseCallback = null;
     this._speakSession = null; // referensi ke sesi speakOnce aktif
+    this._lastToolCallAt = null;
 
     // Konfigurasi Tools yang bisa dipanggil oleh Gemini
     this.tools = [{
@@ -187,6 +188,7 @@ ATURAN KONFIRMASI DATA:
               console.log('📊 Token Usage Total:', e.usage);
             }
             if (e.toolCall) {
+              this._lastToolCallAt = Date.now();
               this._handleToolCall(e.toolCall).catch(error => {
                 console.error('[GeminiLive] Tool call error:', error);
               });
@@ -337,8 +339,8 @@ ATURAN KONFIRMASI DATA:
         });
       }
 
-      // Tunggu sebentar agar audio context terbuka, lalu kirim teks
-      await new Promise(r => setTimeout(r, 200));
+      // Tunggu singkat agar audio context terbuka, lalu kirim teks
+      await new Promise(r => setTimeout(r, 80));
       speakSession.sendClientContent({
         turns: [{ role: 'user', parts: [{ text: pendingText }] }],
         turnComplete: true
@@ -420,6 +422,10 @@ ATURAN KONFIRMASI DATA:
 
   // Handle balasan dari Gemini (Audio 24kHz)
   _handleContent(content) {
+    if (DEBUG_VOICE && this._lastToolCallAt) {
+      console.log(`[GeminiLive] First content after tool: ${Date.now() - this._lastToolCallAt}ms`);
+      this._lastToolCallAt = null;
+    }
     if (content.modelTurn && content.modelTurn.parts) {
       content.modelTurn.parts.forEach(part => {
         if (part.inlineData && part.inlineData.data) {

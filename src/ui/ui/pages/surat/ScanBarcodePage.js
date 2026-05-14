@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import speakAfterPageReady from '../../utils/speakAfterPageReady';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -17,10 +18,11 @@ const ScanBarcodePage = () => {
   const hasGreetedRef = useRef(false);
 
   useEffect(() => {
+    let cancelGreeting = null;
     // Announce instruction on first mount only
     if (electron && !showManual && scanAttempt === 1 && !hasGreetedRef.current) {
       hasGreetedRef.current = true;
-      electron.ipcRenderer.invoke('voice:speakOnce', 'Silakan dekatkan barcode atau nomor resi Anda ke mesin pemindai.').catch(() => {});
+      cancelGreeting = speakAfterPageReady(electron, 'Silakan dekatkan barcode atau nomor resi Anda ke mesin pemindai.');
     }
 
     // Always ensure input is focused for the hardware HID scanner
@@ -58,6 +60,7 @@ const ScanBarcodePage = () => {
     }
 
     return () => {
+      if (cancelGreeting) cancelGreeting();
       clearTimeout(fallbackTimer.current);
       window.removeEventListener('click', handleGlobalClick);
       if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});

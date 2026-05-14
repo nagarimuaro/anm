@@ -1,5 +1,6 @@
 const deviceService = require('../../infrastructure/device/deviceService');
 const fs = require('fs');
+const path = require('path');
 
 class DeviceController {
   register(ipcMain, mainWindow) {
@@ -69,6 +70,45 @@ class DeviceController {
         }
         return { success: true };
       } catch (error) {
+        return { success: false, message: error.message };
+      }
+    });
+
+    // Clear runtime caches: audio cache files + voice_cache DB rows.
+    ipcMain.handle('device:clearCache', async () => {
+      try {
+        const { app } = require('electron');
+        const { dbRun } = require('../../infrastructure/database/db');
+        const cacheDirs = new Set();
+
+        if (process.env.AUDIO_CACHE_DIR) {
+          cacheDirs.add(path.resolve(app.getPath('userData'), process.env.AUDIO_CACHE_DIR));
+          cacheDirs.add(path.resolve(process.cwd(), process.env.AUDIO_CACHE_DIR));
+        }
+        cacheDirs.add(path.join(app.getPath('userData'), 'data', 'audio_cache'));
+        cacheDirs.add(path.join(process.cwd(), 'data', 'audio_cache'));
+
+        let deletedFiles = 0;
+        for (const dir of cacheDirs) {
+          if (!fs.existsSync(dir)) continue;
+          for (const entry of fs.readdirSync(dir)) {
+            const target = path.join(dir, entry);
+            const stat = fs.statSync(target);
+            if (stat.isFile()) {
+              fs.unlinkSync(target);
+              deletedFiles++;
+            }
+          }
+        }
+
+        const dbResult = await dbRun('DELETE FROM voice_cache');
+        return {
+          success: true,
+          deletedFiles,
+          deletedRows: dbResult.changes || 0,
+        };
+      } catch (error) {
+        console.error('Clear cache failed:', error);
         return { success: false, message: error.message };
       }
     });
