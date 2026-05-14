@@ -3,7 +3,13 @@
  * Menggantikan Pipeline STT -> LLM -> TTS menjadi satu WebSocket connection
  */
 const { GoogleGenAI } = require('@google/genai');
+const https = require('https');
 require('dotenv').config();
+
+const DEBUG_VOICE = process.env.DEBUG_VOICE === 'true';
+const MAX_CONNECTING_AUDIO_QUEUE = 50;
+const SEARCH_API_PROVIDER = (process.env.SEARCH_API_PROVIDER || 'tavily').toLowerCase();
+const SEARCH_API_TIMEOUT_MS = Number(process.env.SEARCH_API_TIMEOUT_MS || 8000);
 
 class GeminiLiveService {
   constructor() {
@@ -11,6 +17,7 @@ class GeminiLiveService {
     this.session = null;
     this.isConnecting = false;
     this._manualMode = false;
+    this._inputPaused = false;
     this.audioBufferQueue = [];
     this.onResponseCallback = null;
     this._speakSession = null; // referensi ke sesi speakOnce aktif
@@ -20,11 +27,11 @@ class GeminiLiveService {
       functionDeclarations: [
         {
           name: 'navigate_to_page',
-          description: 'Navigasi ke halaman tertentu seperti buku-tamu, input-nik, surat',
+          description: 'Navigasi ke halaman layanan. Gunakan path yang valid: /input-nik, /profil-warga, /scan-rfid, /scan-rfid-pajak, /buku-tamu, /scan-barcode, /absensi.',
           parameters: {
             type: 'OBJECT',
             properties: {
-              page: { type: 'STRING', description: "Nama path utama, contoh: '/buku-tamu', '/input-nik'" },
+              page: { type: 'STRING', description: "Path valid. Buat/ajukan surat baru pakai '/input-nik'. Cetak/print/cetak ulang surat yang sudah diajukan pakai '/scan-barcode'. Cek bansos pakai '/scan-rfid'. Pajak PBB pakai '/scan-rfid-pajak'. Buku tamu pakai '/buku-tamu'." },
               nextPath: { type: 'STRING', description: "Tujuan selanjutnya. Contoh: jika pengguna ingin buat surat, page='/input-nik' dan nextPath='/profil-warga'." }
             },
             required: ['page']
@@ -63,6 +70,28 @@ class GeminiLiveService {
             },
             required: ['slot_key', 'value']
           }
+        },
+        {
+          name: 'get_current_datetime',
+          description: 'Ambil jam, tanggal, hari, dan timezone saat ini dari mesin kiosk. Wajib dipakai untuk pertanyaan waktu/tanggal sekarang.',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              locale: { type: 'STRING', description: "Locale jawaban, default 'id-ID'." }
+            }
+          }
+        },
+        {
+          name: 'search_latest_info',
+          description: 'Cari info global terbaru dari internet. Wajib dipakai untuk pertanyaan yang bisa berubah seperti presiden saat ini, berita terbaru, harga, jadwal, aturan, atau tokoh publik terkini.',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              query: { type: 'STRING', description: 'Pertanyaan atau kata kunci pencarian.' },
+              locale: { type: 'STRING', description: "Locale bahasa hasil, default 'id-ID'." }
+            },
+            required: ['query']
+          }
         }
       ]
     }];
@@ -76,6 +105,8 @@ class GeminiLiveService {
   async activate() {
     console.log("🚀 Menghubungkan ke Gemini Live API...");
     this.isConnecting = true;
+    this._inputPaused = false;
+    this.audioBufferQueue = [];
     try {
       let apiKey = process.env.GEMINI_API_KEY;
       try {
@@ -108,9 +139,18 @@ class GeminiLiveService {
 
 ATURAN NAVIGASI:
 - Sebelum meminta data (NIK) atau memproses layanan, WAJIB panggil navigate_to_page terlebih dahulu.
-- Jika pengguna ingin buat surat, LANGSUNG panggil navigate_to_page(page='/input-nik', nextPath='/profil-warga') SEBELUM meminta NIK.
+- Jika pengguna ingin BUAT/AJUKAN/MEMBUAT surat BARU, LANGSUNG panggil navigate_to_page(page='/input-nik', nextPath='/profil-warga') SEBELUM meminta NIK.
+- Jika pengguna mengatakan CETAK SURAT, PRINT SURAT, CETAK ULANG SURAT, scan barcode, scan resi, atau cek resi surat, LANGSUNG panggil navigate_to_page(page='/scan-barcode'). Ini BUKAN flow buat surat baru.
+- Jika pengguna ingin cek bansos/bantuan sosial/PKH/BLT, LANGSUNG panggil navigate_to_page(page='/scan-rfid'). JANGAN pakai '/bansos' karena itu halaman hasil setelah scan RFID.
+- Jika pengguna ingin cek Pajak PBB, LANGSUNG panggil navigate_to_page(page='/scan-rfid-pajak'). JANGAN pakai '/pajak'.
 - Jika pengguna ingin buku tamu, LANGSUNG panggil navigate_to_page(page='/buku-tamu').
 - Jangan pernah meminta NIK secara lisan jika belum memanggil tool navigasi!
+
+ATURAN INFO TERBARU:
+- Jika pengguna bertanya jam, tanggal, hari ini, bulan ini, atau waktu sekarang, WAJIB panggil get_current_datetime sebelum menjawab.
+- Jika pengguna bertanya info yang bisa berubah seperti presiden saat ini, pejabat, berita terbaru, harga, jadwal, cuaca, aturan, regulasi, status publik, atau info global terkini, WAJIB panggil search_latest_info sebelum menjawab.
+- Jangan menjawab info terbaru dari memori model. Jika tool search gagal atau tidak tersedia, katakan singkat bahwa Sinta belum bisa mengambil info terbaru saat ini.
+- Untuk data layanan lokal seperti surat, bansos, pajak, absensi, dan buku tamu, tetap gunakan alur aplikasi/backend, bukan search internet.
 
 ATURAN PENGUMPULAN DATA SURAT (SLOT FILLING):
 - Saat mengumpulkan data surat, tanyakan SATU pertanyaan per giliran.
@@ -133,21 +173,23 @@ ATURAN KONFIRMASI DATA:
           onmessage: (e) => {
             // Cek di seluruh struktur `e` untuk menemukan usage
             if (e.serverContent) {
-              if (e.serverContent.modelTurn && e.serverContent.modelTurn.usage) {
+              if (DEBUG_VOICE && e.serverContent.modelTurn && e.serverContent.modelTurn.usage) {
                 console.log('📊 Token Usage (Turn):', e.serverContent.modelTurn.usage);
               }
-              if (e.serverContent.turnComplete) {
+              if (DEBUG_VOICE && e.serverContent.turnComplete) {
                 // Terkadang Live API tidak menyediakan field usage secara default, 
                 // tapi kita bisa intercept turnComplete
                 console.log('🏁 Turn Complete (Sesi Gemini Selesai Bicara)');
               }
               this._handleContent(e.serverContent);
             }
-            if (e.usage) {
+            if (DEBUG_VOICE && e.usage) {
               console.log('📊 Token Usage Total:', e.usage);
             }
             if (e.toolCall) {
-              this._handleToolCall(e.toolCall);
+              this._handleToolCall(e.toolCall).catch(error => {
+                console.error('[GeminiLive] Tool call error:', error);
+              });
             }
           },
           onclose: (e) => {
@@ -167,6 +209,7 @@ ATURAN KONFIRMASI DATA:
       return true;
     } catch (error) {
       this.isConnecting = false;
+      this.audioBufferQueue = [];
       console.error("Gagal terhubung ke Gemini Live:", error);
       this._emitResponse({ type: 'ai_error', message: 'AI Sedang Ada Gangguan' });
       return false;
@@ -175,6 +218,9 @@ ATURAN KONFIRMASI DATA:
   }
 
   deactivate() {
+    this.isConnecting = false;
+    this._inputPaused = false;
+    this.audioBufferQueue = [];
     if (this.session) {
       try {
         if (typeof this.session.close === 'function') {
@@ -187,13 +233,51 @@ ATURAN KONFIRMASI DATA:
     }
   }
 
+  async resetConversation({ reactivate = true } = {}) {
+    console.log('🔄 Reset percakapan Gemini Live');
+    this.cancelSpeakOnce();
+    this.deactivate();
+    this._manualMode = false;
+    this._inputPaused = false;
+    this.audioBufferQueue = [];
+    this._chunkCount = 0;
+
+    try {
+      const sessionManager = require('./sessionManager');
+      if (sessionManager.getSession()) {
+        await sessionManager.abandonSession();
+      }
+    } catch (error) {
+      console.error('[GeminiLive] Gagal reset session bisnis:', error.message);
+    }
+
+    if (!reactivate) {
+      this._emitResponse({ type: 'stateChange', state: 'STANDBY' });
+      return true;
+    }
+
+    const activated = await this.activate();
+    if (!activated) {
+      this._emitResponse({ type: 'stateChange', state: 'STANDBY' });
+    }
+    return activated;
+  }
+
+  pauseInput() {
+    this._inputPaused = true;
+  }
+
+  resumeInput() {
+    this._inputPaused = false;
+  }
+
   /**
    * speakOnce — Sesi Gemini khusus untuk TTS one-shot (absensi, notifikasi)
    * Emit state 'SPEAKING' bukan 'CONNECTED', agar useVoiceSession tidak buka mic/greeting.
    * Auto-disconnect setelah timeout.
    */
   async speakOnce(text, timeoutMs = 10000) {
-    console.log('🔊 speakOnce:', text.substring(0, 60) + '...');
+    if (DEBUG_VOICE) console.log('🔊 speakOnce:', text.substring(0, 60) + '...');
     // Tutup sesi speakOnce sebelumnya jika masih aktif
     this.cancelSpeakOnce();
 
@@ -229,19 +313,19 @@ ATURAN KONFIRMASI DATA:
         },
         callbacks: {
           onopen: () => {
-            console.log('🔊 speakOnce connected OK');
+            if (DEBUG_VOICE) console.log('🔊 speakOnce connected OK');
             this._emitResponse({ type: 'stateChange', state: 'SPEAKING' });
           },
           onmessage: (e) => {
             if (e.serverContent) this._handleContent(e.serverContent);
           },
-          onclose: (e) => { console.log(`🔊 speakOnce closed. Code: ${e?.code}, Reason: "${e?.reason}"`); },
+          onclose: (e) => { if (DEBUG_VOICE) console.log(`🔊 speakOnce closed. Code: ${e?.code}, Reason: "${e?.reason}"`); },
           onerror: (err) => console.error('speakOnce error:', err)
         }
       });
 
       // Tambahkan turnComplete:true agar Gemini tahu user turn selesai dan harus merespons
-      console.log('🔊 Sending content to speakOnce session...');
+      if (DEBUG_VOICE) console.log('🔊 Sending content to speakOnce session...');
 
       // Gemini Live butuh audio context untuk menghasilkan audio output.
       // Kirim beberapa frame audio senyap (silent) untuk membuka audio stream, 
@@ -271,7 +355,7 @@ ATURAN KONFIRMASI DATA:
   /** Hentikan sesi speakOnce yang sedang aktif */
   cancelSpeakOnce() {
     if (this._speakSession) {
-      console.log('🔇 Cancelling active speakOnce session');
+      if (DEBUG_VOICE) console.log('🔇 Cancelling active speakOnce session');
       try { this._speakSession.close(); } catch (_) {}
       this._speakSession = null;
     }
@@ -279,6 +363,7 @@ ATURAN KONFIRMASI DATA:
 
   // (Legacy) Frontend mengirim chunk audio sebagai Buffer
   processAudioChunk(chunk) {
+    if (this._inputPaused) return;
     if (!this.session) return;
     if (!this._chunkCount) this._chunkCount = 0;
     this._chunkCount++;
@@ -288,7 +373,7 @@ ATURAN KONFIRMASI DATA:
     for (let i = 0; i < int16View.length; i++) sumSq += int16View[i] * int16View[i];
     const rms = Math.sqrt(sumSq / int16View.length);
 
-    if (this._chunkCount % 16 === 1) {
+    if (DEBUG_VOICE && this._chunkCount % 16 === 1) {
       console.log(`🎤 Audio chunk #${this._chunkCount}, size: ${chunk.length}B, RMS: ${rms.toFixed(0)} ${rms > 500 ? '🔊 SUARA TERDETEKSI' : '🔇 hening'}`);
     }
     this.session.sendRealtimeInput({
@@ -301,8 +386,12 @@ ATURAN KONFIRMASI DATA:
 
   // Frontend mengirim base64 (format baru dari useVoiceSession)
   processAudioChunkBase64(base64pcm, frontendRms) {
+    if (this._inputPaused) return;
     if (!this.session) {
       if (this.isConnecting) {
+        if (this.audioBufferQueue.length >= MAX_CONNECTING_AUDIO_QUEUE) {
+          this.audioBufferQueue.shift();
+        }
         this.audioBufferQueue.push({
           audio: {
             data: base64pcm,
@@ -316,7 +405,7 @@ ATURAN KONFIRMASI DATA:
     if (!this._chunkCount) this._chunkCount = 0;
     this._chunkCount++;
 
-    if (this._chunkCount % 64 === 1) {
+    if (DEBUG_VOICE && this._chunkCount % 64 === 1) {
       const rmsLabel = (frontendRms || 0) > 0.003 ? '🔊 SUARA TERDETEKSI' : '🔇 hening';
       console.log(`🎤 Audio chunk #${this._chunkCount}, RMS: ${(frontendRms || 0).toFixed(4)} ${rmsLabel}`);
     }
@@ -339,30 +428,31 @@ ATURAN KONFIRMASI DATA:
             audioData: part.inlineData.data
           });
         }
-        if (part.text) {
+        if (DEBUG_VOICE && part.text) {
           console.log('🗣️ Gemini:', part.text);
         }
       });
     }
-    if (content.outputTranscription) {
+    if (DEBUG_VOICE && content.outputTranscription) {
       console.log('🗣️ Gemini:', content.outputTranscription.text);
     }
-    if (content.inputTranscription) {
+    if (DEBUG_VOICE && content.inputTranscription) {
       console.log('🎤 User:', content.inputTranscription.text);
     }
-    if (content.interrupted) {
+    if (DEBUG_VOICE && content.interrupted) {
       console.log('⏸️ Gemini interrupted');
     }
-    if (content.turnComplete) {
+    if (DEBUG_VOICE && content.turnComplete) {
       console.log('🏁 Turn Complete (Sesi Gemini Selesai Bicara)');
     }
   }
 
   // Handle ketika Gemini memanggil fungsi (navigate_to_page, set_nik)
-  _handleToolCall(call) {
+  async _handleToolCall(call) {
     const fnCalls = call.functionCalls;
-    fnCalls.forEach(fn => {
-      console.log(`🤖 Gemini memanggil fungsi: ${fn.name}`, fn.args);
+    for (const fn of fnCalls) {
+      if (DEBUG_VOICE) console.log(`🤖 Gemini memanggil fungsi: ${fn.name}`, fn.args);
+      let toolResponse = { success: true };
 
       if (fn.name === 'navigate_to_page') {
         this._emitResponse({
@@ -393,7 +483,7 @@ ATURAN KONFIRMASI DATA:
         const session = sessionManager.getSession();
         if (session && session.phase === 'SLOT_FILLING') {
           const fillResult = sessionManager.fillSlot(fn.args.slot_key, fn.args.value);
-          console.log(`✅ Slot filled via voice: ${fn.args.slot_key} = "${fn.args.value}" | allFilled: ${fillResult?.allFilled}`);
+          if (DEBUG_VOICE) console.log(`✅ Slot filled via voice: ${fn.args.slot_key} = "${fn.args.value}" | allFilled: ${fillResult?.allFilled}`);
           // Emit session update ke frontend agar form langsung ter-update
           this._emitResponse({
             type: 'session_update',
@@ -424,21 +514,194 @@ ATURAN KONFIRMASI DATA:
             }
           }
         }
+      } else if (fn.name === 'get_current_datetime') {
+        toolResponse = this._getCurrentDateTime(fn.args?.locale || 'id-ID');
+      } else if (fn.name === 'search_latest_info') {
+        toolResponse = await this._searchLatestInfo(fn.args?.query, fn.args?.locale || 'id-ID');
       }
 
       // Kirim hasil balasan fungsi ke Gemini (wajib agar Gemini tahu fungsinya berhasil dieksekusi)
-      this.session.sendToolResponse({
-        functionResponses: [{
-          id: fn.id,
-          name: fn.name,
-          response: { success: true }
-        }]
-      });
-    });
+      if (this.session) {
+        this.session.sendToolResponse({
+          functionResponses: [{
+            id: fn.id,
+            name: fn.name,
+            response: toolResponse
+          }]
+        });
+      }
+    }
   }
 
   _emitResponse(data) {
     if (this.onResponseCallback) this.onResponseCallback(data);
+  }
+
+  _getCurrentDateTime(locale = 'id-ID') {
+    const now = new Date();
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta';
+
+    return {
+      success: true,
+      iso: now.toISOString(),
+      timezone: timeZone,
+      locale,
+      date: now.toLocaleDateString(locale, {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone,
+      }),
+      time: now.toLocaleTimeString(locale, {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZone,
+      }),
+    };
+  }
+
+  async _searchLatestInfo(query, locale = 'id-ID') {
+    const normalizedQuery = String(query || '').trim();
+    if (!normalizedQuery) {
+      return {
+        success: false,
+        error: 'Query pencarian kosong.',
+      };
+    }
+
+    const apiKey = process.env.SEARCH_API_KEY || process.env.TAVILY_API_KEY || process.env.SERPAPI_API_KEY || '';
+    if (!apiKey) {
+      return {
+        success: false,
+        query: normalizedQuery,
+        error: 'SEARCH_API_KEY belum dikonfigurasi.',
+      };
+    }
+
+    try {
+      if (SEARCH_API_PROVIDER === 'serpapi') {
+        return await this._searchWithSerpApi(normalizedQuery, locale, apiKey);
+      }
+      return await this._searchWithTavily(normalizedQuery, locale, apiKey);
+    } catch (error) {
+      console.error('[FreshInfo] Search error:', error.message);
+      return {
+        success: false,
+        query: normalizedQuery,
+        provider: SEARCH_API_PROVIDER,
+        error: error.message,
+      };
+    }
+  }
+
+  async _searchWithTavily(query, locale, apiKey) {
+    const response = await this._postJson('https://api.tavily.com/search', {
+      api_key: apiKey,
+      query,
+      search_depth: 'basic',
+      include_answer: true,
+      max_results: 5,
+      include_raw_content: false,
+    });
+
+    const results = Array.isArray(response.results) ? response.results.slice(0, 5) : [];
+    return {
+      success: true,
+      provider: 'tavily',
+      query,
+      locale,
+      answer: response.answer || '',
+      sources: results.map((item) => ({
+        title: item.title || '',
+        url: item.url || '',
+        content: item.content || '',
+        published_date: item.published_date || '',
+      })),
+    };
+  }
+
+  async _searchWithSerpApi(query, locale, apiKey) {
+    const params = new URLSearchParams({
+      engine: 'google',
+      q: query,
+      api_key: apiKey,
+      hl: locale.startsWith('id') ? 'id' : 'en',
+      gl: locale.startsWith('id') ? 'id' : 'us',
+      num: '5',
+    });
+    const response = await this._getJson(`https://serpapi.com/search.json?${params.toString()}`);
+    const organic = Array.isArray(response.organic_results) ? response.organic_results.slice(0, 5) : [];
+
+    return {
+      success: true,
+      provider: 'serpapi',
+      query,
+      locale,
+      answer: response.answer_box?.answer || response.answer_box?.snippet || '',
+      sources: organic.map((item) => ({
+        title: item.title || '',
+        url: item.link || '',
+        content: item.snippet || '',
+        published_date: item.date || '',
+      })),
+    };
+  }
+
+  _postJson(url, payload) {
+    return this._requestJson('POST', url, payload);
+  }
+
+  _getJson(url) {
+    return this._requestJson('GET', url);
+  }
+
+  _requestJson(method, urlString, payload = null) {
+    return new Promise((resolve, reject) => {
+      const url = new URL(urlString);
+      const body = payload ? JSON.stringify(payload) : '';
+      const req = https.request({
+        hostname: url.hostname,
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers: {
+          Accept: 'application/json',
+          ...(body ? {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+          } : {}),
+        },
+        timeout: SEARCH_API_TIMEOUT_MS,
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          let parsed = {};
+          try {
+            parsed = data ? JSON.parse(data) : {};
+          } catch (error) {
+            reject(new Error(`Search API response parse error: ${data.substring(0, 160)}`));
+            return;
+          }
+
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(parsed);
+          } else {
+            reject(new Error(`Search API error ${res.statusCode}: ${parsed.error || parsed.message || data.substring(0, 160)}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Search API request timeout'));
+      });
+
+      if (body) req.write(body);
+      req.end();
+    });
   }
 
   // --- COMPATIBILITY METHODS ---

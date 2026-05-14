@@ -1,5 +1,4 @@
-// This is a placeholder/wrapper for future Axios calls.
-// Since we are mocking backend calls for now, this exposes a standard way to get headers when needed.
+// Shared helper for backend request headers.
 
 const fs = require('fs');
 const path = require('path');

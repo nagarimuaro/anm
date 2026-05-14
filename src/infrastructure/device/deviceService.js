@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 
-const CURRENT_VERSION = "1.0.0"; // Hardcoded testing version
+const CURRENT_VERSION = "1.0.0";
 
 class DeviceService {
   constructor() {

@@ -8,7 +8,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 const electron = window.require ? window.require('electron') : null;
-const MIC_INPUT_GAIN = 2.5;
+const DEBUG_VOICE = window.process?.env?.DEBUG_VOICE === 'true';
+const MIC_INPUT_GAIN = 3.5;
+const MIC_WORKLET_CHUNK_SIZE = 2048;
 
 export default function useVoiceSession(disableMic = false) {
   // State
@@ -41,6 +43,9 @@ export default function useVoiceSession(disableMic = false) {
   const playbackCtxRef = useRef(null);
   const nextPlayTimeRef = useRef(0);
   const playbackEndTimerRef = useRef(null);
+  const isPlayingRef = useRef(false);
+  const isGeminiPlaybackActiveRef = useRef(false);
+  const activeSourcesRef = useRef(new Set());
 
   // ── Mic Management (Inline AudioWorklet — terbukti bekerja di test page) ──
   const openMic = useCallback(async () => {
@@ -55,19 +60,27 @@ export default function useVoiceSession(disableMic = false) {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       const systemSampleRate = audioCtx.sampleRate;
-      console.log('[Mic] sampleRate:', systemSampleRate);
+      if (DEBUG_VOICE) console.log('[Mic] sampleRate:', systemSampleRate);
 
       // Inline worklet via Blob URL (file path di-fallback ke index.html oleh webpack!)
       const workletCode = `
         class MicCapture extends AudioWorkletProcessor {
-          constructor() { super(); this._buf = []; }
+          constructor() {
+            super();
+            this._buf = new Float32Array(${MIC_WORKLET_CHUNK_SIZE});
+            this._offset = 0;
+          }
           process(inputs) {
             const ch = inputs[0] && inputs[0][0];
             if (ch) {
-              for (let i = 0; i < ch.length; i++) this._buf.push(ch[i]);
-              while (this._buf.length >= 1024) {
-                const chunk = new Float32Array(this._buf.splice(0, 1024));
-                this.port.postMessage({ type: 'audio', chunk }, [chunk.buffer]);
+              for (let i = 0; i < ch.length; i++) {
+                this._buf[this._offset++] = ch[i];
+                if (this._offset === this._buf.length) {
+                  const chunk = this._buf;
+                  this._buf = new Float32Array(${MIC_WORKLET_CHUNK_SIZE});
+                  this._offset = 0;
+                  this.port.postMessage({ type: 'audio', chunk }, [chunk.buffer]);
+                }
               }
             }
             return true;
@@ -90,10 +103,6 @@ export default function useVoiceSession(disableMic = false) {
         const targetRate = 16000;
         const ratio = systemSampleRate / targetRate;
         const outputLength = Math.floor(float32.length / ratio);
-        const resampled = new Float32Array(outputLength);
-        for (let i = 0; i < outputLength; i++) {
-          resampled[i] = float32[Math.floor(i * ratio)];
-        }
 
         // RMS
         let sumSq = 0;
@@ -101,14 +110,14 @@ export default function useVoiceSession(disableMic = false) {
         const rms = Math.sqrt(sumSq / float32.length);
 
         debugCount++;
-        if (debugCount % 64 === 0) {
+        if (DEBUG_VOICE && debugCount % 64 === 0) {
           console.log(`[Mic] RMS: ${rms.toFixed(5)}, sr: ${systemSampleRate}`);
         }
 
-        // Float32 → Int16 → base64
+        // Downsample + gain + Float32 → Int16 → base64
         const int16 = new Int16Array(outputLength);
         for (let i = 0; i < outputLength; i++) {
-          const s = Math.max(-1, Math.min(1, resampled[i] * MIC_INPUT_GAIN));
+          const s = Math.max(-1, Math.min(1, float32[Math.floor(i * ratio)] * MIC_INPUT_GAIN));
           int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
         const bytes = new Uint8Array(int16.buffer);
@@ -116,7 +125,7 @@ export default function useVoiceSession(disableMic = false) {
         for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         const base64pcm = window.btoa(binary);
 
-        electron.ipcRenderer.invoke('voice:audioChunk', {
+        electron.ipcRenderer.send('voice:audioChunk', {
           base64pcm, rms, sampleRate: targetRate, format: 'pcm_s16le',
         });
       };
@@ -128,7 +137,7 @@ export default function useVoiceSession(disableMic = false) {
       audioCtxRef.current = audioCtx;
       analyserRef.current = workletNode;
       isMicOpenRef.current = true;
-      console.log('[Mic] Inline AudioWorklet started OK');
+      if (DEBUG_VOICE) console.log('[Mic] Inline AudioWorklet started OK');
     } catch (err) {
       console.error('[Mic] Failed to open:', err);
     }
@@ -218,7 +227,7 @@ export default function useVoiceSession(disableMic = false) {
           if (!window.lipsyncTick) window.lipsyncTick = 0;
           window.lipsyncTick++;
           if (window.lipsyncTick % 30 === 0 && rms > 0.001) {
-            console.log(`[AudioAnalyser] Phoneme: ${targetPhoneme} | PixiRMS: ${Math.round(smoothedRms)}`);
+            if (DEBUG_VOICE) console.log(`[AudioAnalyser] Phoneme: ${targetPhoneme} | PixiRMS: ${Math.round(smoothedRms)}`);
           }
         } else {
           window.currentVoiceRMS = 0;
@@ -259,21 +268,58 @@ export default function useVoiceSession(disableMic = false) {
     src.buffer = buf;
     // Hubungkan ke analyser, BUKAN langsung ke destination (karena analyser sudah konek ke destination)
     src.connect(ctx.lipsyncAnalyser || ctx.destination);
+    activeSourcesRef.current.add(src);
+    src.onended = () => {
+      activeSourcesRef.current.delete(src);
+    };
 
     const now = ctx.currentTime;
     // Jika nextPlayTime telat, set ke "now" + sedikit margin agar gapless
     const startAt = Math.max(now + 0.05, nextPlayTimeRef.current);
     nextPlayTimeRef.current = startAt + buf.duration;
 
-    setIsPlaying(true);
+    if (!isPlayingRef.current) {
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+    }
+    if (!isGeminiPlaybackActiveRef.current) {
+      isGeminiPlaybackActiveRef.current = true;
+      if (electron) electron.ipcRenderer.invoke('voice:audioStarted').catch(() => { });
+    }
     if (playbackEndTimerRef.current) clearTimeout(playbackEndTimerRef.current);
     playbackEndTimerRef.current = setTimeout(() => {
+      isPlayingRef.current = false;
+      isGeminiPlaybackActiveRef.current = false;
       setIsPlaying(false);
       if (electron) electron.ipcRenderer.invoke('voice:audioEnded').catch(() => { });
     }, (nextPlayTimeRef.current - now) * 1000 + 100);
 
     src.start(startAt);
   }, [pcmToFloat32Array]);
+
+  const stopPlayback = useCallback(({ notifyAudioEnded = true } = {}) => {
+    const player = audioPlayerRef.current;
+    player.pause();
+    player.currentTime = 0;
+    player.removeAttribute('src');
+
+    activeSourcesRef.current.forEach((src) => {
+      try { src.stop(); } catch (_) { }
+      try { src.disconnect(); } catch (_) { }
+    });
+    activeSourcesRef.current.clear();
+
+    if (playbackEndTimerRef.current) {
+      clearTimeout(playbackEndTimerRef.current);
+      playbackEndTimerRef.current = null;
+    }
+
+    nextPlayTimeRef.current = 0;
+    isPlayingRef.current = false;
+    isGeminiPlaybackActiveRef.current = false;
+    setIsPlaying(false);
+    if (notifyAudioEnded && electron) electron.ipcRenderer.invoke('voice:audioEnded').catch(() => { });
+  }, []);
 
   const playBeep = useCallback(() => {
     try {
@@ -328,13 +374,10 @@ export default function useVoiceSession(disableMic = false) {
     closeMic();
 
     // Hentikan pemutaran PCM jika sedang berjalan
+    stopPlayback();
     if (playbackCtxRef.current && playbackCtxRef.current.state !== 'closed') {
       playbackCtxRef.current.suspend(); // Atau close()
     }
-    if (playbackEndTimerRef.current) {
-      clearTimeout(playbackEndTimerRef.current);
-    }
-    setIsPlaying(false);
 
     if (electron) {
       electron.ipcRenderer.invoke('voice:deactivate');
@@ -345,7 +388,61 @@ export default function useVoiceSession(disableMic = false) {
       setAiResponse('');
       setPhase(null);
     }, 3000);
-  }, [closeMic]);
+  }, [closeMic, stopPlayback]);
+
+  const resetLocalConversationState = useCallback(() => {
+    setTranscript('');
+    setInterimTranscript('');
+    setAiResponse('');
+    setPhase(null);
+    setSessionData(null);
+    setLastAction(null);
+    setLastPath(null);
+    setLastNextPath(null);
+    setLastActionTime(null);
+    setIsProcessing(false);
+  }, []);
+
+  const resetConversation = useCallback(async () => {
+    resetLocalConversationState();
+    stopPlayback({ notifyAudioEnded: false });
+    setIsActive(true);
+    setIsConnecting(true);
+    setIsListening(false);
+
+    try {
+      if (!disableMic) {
+        await openMic();
+        initPlaybackContext();
+        if (playbackCtxRef.current.state === 'suspended') {
+          await playbackCtxRef.current.resume();
+        }
+      }
+
+      if (!electron) {
+        setIsConnecting(false);
+        setIsActive(false);
+        setAiResponse('Electron tidak tersedia untuk reset sesi AI.');
+        return { success: false };
+      }
+
+      const result = await electron.ipcRenderer.invoke('voice:resetConversation', { reactivate: true });
+      if (!result?.success) {
+        setIsConnecting(false);
+        setIsActive(false);
+        setIsListening(false);
+        setAiResponse(result?.error || 'Gagal memulai ulang sesi AI.');
+      }
+      return result;
+    } catch (error) {
+      console.error('Reset conversation failed:', error);
+      setIsConnecting(false);
+      setIsActive(false);
+      setIsListening(false);
+      setAiResponse('Gagal memulai ulang sesi AI.');
+      return { success: false, error: error.message };
+    }
+  }, [disableMic, initPlaybackContext, openMic, resetLocalConversationState, stopPlayback]);
 
   const toggle = useCallback(async () => {
     if (isActive) {
@@ -364,6 +461,7 @@ export default function useVoiceSession(disableMic = false) {
     player.currentTime = 0;
 
     setIsPlaying(true);
+    isPlayingRef.current = true;
     if (electron) electron.ipcRenderer.invoke('voice:audioStarted');
 
     player.src = audioUrl;
@@ -373,6 +471,7 @@ export default function useVoiceSession(disableMic = false) {
       player.removeEventListener('canplaythrough', onCanPlay);
       player.play().catch(e => {
         if (e.name !== 'AbortError') console.error('Audio play error:', e);
+        isPlayingRef.current = false;
         setIsPlaying(false);
         if (electron) electron.ipcRenderer.invoke('voice:audioEnded');
       });
@@ -507,6 +606,7 @@ export default function useVoiceSession(disableMic = false) {
     const player = audioPlayerRef.current;
     const handleEnded = () => {
       setIsPlaying(false);
+      isPlayingRef.current = false;
       if (electron) electron.ipcRenderer.invoke('voice:audioEnded');
     };
     player.addEventListener('ended', handleEnded);
@@ -518,6 +618,8 @@ export default function useVoiceSession(disableMic = false) {
     return () => {
       closeMic();
       audioPlayerRef.current.pause();
+      isPlayingRef.current = false;
+      isGeminiPlaybackActiveRef.current = false;
     };
   }, [closeMic]);
 
@@ -539,6 +641,7 @@ export default function useVoiceSession(disableMic = false) {
     lastActionTime,
     activate,
     deactivate,
+    resetConversation,
     toggle,
     playAudio,
     sendKeyboardInput,

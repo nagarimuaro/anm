@@ -247,7 +247,7 @@ const ScanBarcodePage = () => {
 
                 {/* The Hand & Doc */}
                 <div style={{ position: 'relative', width: '140px', height: '200px', background: '#f1f5f9', borderRadius: '12px', border: '4px solid #1e293b', animation: 'docScanSlide 2.5s infinite ease-in-out', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 0' }}>
-                   {/* Mock Barcode */}
+                   {/* Barcode preview */}
                    <div style={{ width: '80%', display: 'flex', gap: '5px', height: '70px', justifyContent: 'center' }}>
                       <div style={{ width: '6px', background: 'black' }}></div>
                       <div style={{ width: '10px', background: 'black' }}></div>

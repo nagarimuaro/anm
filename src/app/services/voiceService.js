@@ -381,6 +381,10 @@ class VoiceService {
       });
 
       const result = await kioskService.buatSurat(suratData);
+      if (!result || (result.success === false && result.status !== 'success')) {
+        throw new Error(result?.message || result?.pesan || 'Backend menolak pengajuan surat.');
+      }
+
       const completedSession = await sessionManager.completeSession(result);
 
       // Ambil tracking_code dan qr_base64 dari response API

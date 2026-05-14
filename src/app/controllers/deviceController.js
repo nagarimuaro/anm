@@ -40,7 +40,7 @@ class DeviceController {
         const { app } = require('electron');
         const path = require('path');
         
-        const destPath = path.join(app.getPath('temp'), 'update_dummy.exe');
+        const destPath = path.join(app.getPath('temp'), 'anm-update.exe');
         
         console.log('[OTA Updater] Memulai unduhan dari:', url);
         const response = await fetch(url);
@@ -49,7 +49,7 @@ class DeviceController {
            throw new Error(`Server menolak unduhan. Status: ${response.status}`);
         }
 
-        // Tulis stream dummy ke file fisik di Local Temp
+        // Tulis stream update ke file fisik di Local Temp
         const arrayBuffer = await response.arrayBuffer();
         fs.writeFileSync(destPath, Buffer.from(arrayBuffer));
 

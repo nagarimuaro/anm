@@ -41,33 +41,10 @@ const ProfilWargaPage = () => {
             if (!data.nik && nik) data.nik = nik;
             setWarga(data);
           } else {
-            setWarga({
-              nik,
-              nama: `Warga (${nik.slice(-4)})`,
-              tempat_lahir: '-',
-              tanggal_lahir: '-',
-              jenis_kelamin: '-',
-              alamat: '-',
-              rt: '-', rw: '-',
-              agama: '-',
-              pekerjaan: '-',
-              status_kawin: '-',
-            });
+            setError(result?.message || 'Data warga tidak ditemukan di backend.');
           }
         } else {
-          // Fallback tanpa electron
-          setWarga({
-            nik,
-            nama: 'Demo User',
-            tempat_lahir: 'Padang',
-            tanggal_lahir: '1990-01-01',
-            jenis_kelamin: 'Laki-Laki',
-            alamat: 'Jorong Koto Baru, Nagari Sungai Penuh',
-            rt: '001', rw: '001',
-            agama: 'Islam',
-            pekerjaan: 'Wiraswasta',
-            status_kawin: 'Belum Kawin',
-          });
+          setError('Aplikasi harus berjalan di Electron untuk mengambil data warga.');
         }
       } catch (err) {
         setError('Gagal mengambil data. Silakan coba lagi.');

@@ -5,6 +5,7 @@
  * Mendukung streaming: interim transcripts dikirim real-time ke frontend
  */
 const voiceService = require('../services/geminiLiveService'); // Menggunakan Gemini Service
+const DEBUG_VOICE = process.env.DEBUG_VOICE === 'true';
 
 function register(ipc, mainWindow) {
   // Set callback untuk mengirim response ke frontend
@@ -25,7 +26,7 @@ function register(ipc, mainWindow) {
           // Streaming interim transcript — kata per kata real-time
           mainWindow.webContents.send('voice:interim', { text: data.text });
         } else if (data.type === 'audio_stream') {
-          console.log(`🔉 [VC] Forwarding audio_stream to renderer, size: ${data.audioData?.length}`);
+          if (DEBUG_VOICE) console.log(`🔉 [VC] Forwarding audio_stream to renderer, size: ${data.audioData?.length}`);
           mainWindow.webContents.send('voice:audio_stream', data);
         } else if (data.type === 'stateChange') {
           mainWindow.webContents.send('voice:stateChange', data);
@@ -82,8 +83,23 @@ function register(ipc, mainWindow) {
     return { success: true };
   });
 
-  // Audio chunk dari frontend mic (raw PCM Int16, encoded base64)
-  ipc.handle('voice:audioChunk', (event, { base64pcm, chunk, rms, sampleRate, format }) => {
+  // Reset percakapan saat kembali ke beranda: hapus konteks Gemini + session bisnis,
+  // lalu aktifkan ulang agar Sinta mulai dari nol.
+  ipc.handle('voice:resetConversation', async (event, options = {}) => {
+    try {
+      const result = await voiceService.resetConversation({
+        reactivate: options.reactivate !== false,
+      });
+      return result
+        ? { success: true }
+        : { success: false, error: 'Gagal mengaktifkan ulang sesi Gemini.' };
+    } catch (error) {
+      console.error('Voice reset conversation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  const handleAudioChunk = ({ base64pcm, chunk, rms }) => {
     // base64pcm: dikirim dari frontend sebagai base64 string (format baru)
     // chunk: fallback untuk format lama
     if (base64pcm) {
@@ -99,6 +115,16 @@ function register(ipc, mainWindow) {
       }
       voiceService.processAudioChunk(buffer, rms);
     }
+  };
+
+  // Audio chunk dari frontend mic (raw PCM Int16, encoded base64)
+  ipc.on('voice:audioChunk', (event, payload) => {
+    handleAudioChunk(payload || {});
+  });
+
+  // Backward compat untuk caller lama yang masih invoke().
+  ipc.handle('voice:audioChunk', (event, payload) => {
+    handleAudioChunk(payload || {});
   });
 
   // TTS only — synthesize teks and play with echo suppression
@@ -153,7 +179,7 @@ function register(ipc, mainWindow) {
   // Transcript dari frontend Web Speech API (bypass streaming STT)
   ipc.handle('voice:processTranscript', async (event, transcript) => {
     try {
-      console.log(`📝 Received transcript from frontend: "${transcript}"`);
+      if (DEBUG_VOICE) console.log(`📝 Received transcript from frontend: "${transcript}"`);
       await voiceService.handleTranscriptDirect(transcript);
       return { success: true };
     } catch (error) {
@@ -236,6 +262,9 @@ function register(ipc, mainWindow) {
     const sttService = require('../../infrastructure/speech/sttService');
     vadService.pauseForAudio();
     sttService.pauseStreaming();
+    if (typeof voiceService.pauseInput === 'function') {
+      voiceService.pauseInput();
+    }
     return { success: true };
   });
 
@@ -248,6 +277,9 @@ function register(ipc, mainWindow) {
     if (!voiceService.isManualMode()) {
       vadService.resumeAfterAudio();
       sttService.resumeStreaming();
+      if (typeof voiceService.resumeInput === 'function') {
+        voiceService.resumeInput();
+      }
     }
     return { success: true };
   });

@@ -3,6 +3,46 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 const electron = window.require ? window.require('electron') : null;
 
+const normalizeBansosStatus = (result, fallbackNik) => {
+  const data = result?.data || {};
+  const statusText = String(data.status || data.status_bansos || '').toLowerCase();
+  const isNegativeStatus = statusText.includes('bukan') || statusText.includes('tidak');
+  const isRegistered = Boolean(
+    data.terdaftar
+    ?? data.registered
+    ?? data.is_registered
+    ?? (statusText.includes('penerima') && !isNegativeStatus)
+  );
+
+  const rawAssistance = data.bantuan || data.bantuans || data.jenis_bantuan || data.jenis || [];
+  const bantuan = Array.isArray(rawAssistance)
+    ? rawAssistance.map((item) => {
+      if (typeof item === 'string') {
+        return {
+          jenis: item,
+          detail: data.keterangan || '',
+          periode: data.periode || '',
+        };
+      }
+
+      return {
+        jenis: item.jenis || item.nama || item.name || '-',
+        detail: item.detail || item.nominal || item.keterangan || '',
+        periode: item.periode || item.tahap || '',
+      };
+    })
+    : [];
+
+  return {
+    nik: data.nik || fallbackNik || '',
+    nama: data.nama || data.name || '-',
+    alamat: data.alamat || data.address || '-',
+    terdaftar: isRegistered,
+    bantuan,
+    message: data.message || result?.message || '',
+  };
+};
+
 const BansosPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,35 +65,42 @@ const BansosPage = () => {
 
   useEffect(() => {
     const checkBansos = async () => {
-      // Mematikan sementara hit ke IPC / API Backend, memaksa data simulasi kita jalan di Electron!
-      // if (electron && nik) {
-      //   try {
-      //     const result = await electron.ipcRenderer.invoke('kiosk:api:cekBansos', nik);
-      //     setStatus(result?.data || { terdaftar: false });
-      //   } catch {
-      //     setStatus({ terdaftar: false });
-      //   }
-      // } else {
-        
-        // Karena string dari USB RFID scanner berisiko mengandung hidden trailing characters, nol tambahan di depan, dsb,
-        // Kita gunakan "includes" agar pasti tertembus selama memuat 2713107202.
-        const isRegistered = String(nik).includes('2713107202');
-
+      if (!nik) {
         setStatus({
-          nik: nik || '3171234567890001',
-          nama: 'Budi Santoso',
-          alamat: 'Jl. Merdeka No. 10, RT 01 / RW 02, Nagari Indah',
-          terdaftar: isRegistered,
-          bantuan: isRegistered ? [
-            { jenis: 'Program Keluarga Harapan (PKH)', detail: 'Rp 600.000 / Tahap', periode: 'Tahap 1 (Jan-Mar 2024)' },
-            { jenis: 'Bantuan Langsung Tunai (BLT)', detail: 'Uang Tunai Rp 400.000', periode: 'Maret 2024' },
-            { jenis: 'Bantuan Pangan Non Tunai (BPNT)', detail: 'Sembako Setara Rp 200.000', periode: 'April 2024' }
-          ] : [],
+          nik: '',
+          nama: '-',
+          alamat: '-',
+          terdaftar: false,
+          bantuan: [],
+          message: 'NIK tidak ditemukan. Silakan scan e-KTP terlebih dahulu.',
         });
-        
-      // } // <-- Akhir dari block else
+        setLoading(false);
+        return;
+      }
+
       if (electron) {
-        // Simulate waiting voice output on mount is handled in scanner, here we narrate outcome
+        try {
+          const result = await electron.ipcRenderer.invoke('kiosk:api:cekBansos', nik);
+          setStatus(normalizeBansosStatus(result, nik));
+        } catch (error) {
+          setStatus({
+            nik,
+            nama: '-',
+            alamat: '-',
+            terdaftar: false,
+            bantuan: [],
+            message: error.message || 'Gagal mengambil data bansos.',
+          });
+        }
+      } else {
+        setStatus({
+          nik,
+          nama: '-',
+          alamat: '-',
+          terdaftar: false,
+          bantuan: [],
+          message: 'Aplikasi harus berjalan di Electron untuk mengambil data bansos.',
+        });
       }
       setLoading(false);
     };
@@ -63,8 +110,8 @@ const BansosPage = () => {
   useEffect(() => {
     if (!loading && status && electron) {
       const pesan = status.terdaftar
-        ? `Selamat, ${status.nama}! E-KTP Anda terdaftar sebagai penerima bantuan sosial. Anda menerima ${status.bantuan?.length || 0} jenis bantuan. Rincian dapat dilihat pada layar.`
-        : `Maaf, ${status.nama}. Data Anda belum terdaftar sebagai penerima bantuan sosial pada periode ini. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri.`;
+        ? `Selamat. E-KTP Anda terdaftar sebagai penerima bantuan sosial. Anda menerima ${status.bantuan?.length || 0} jenis bantuan. Rincian dapat dilihat pada layar.`
+        : 'Maaf. Data Anda belum terdaftar sebagai penerima bantuan sosial pada periode ini. Terima kasih sudah menggunakan layanan Anjungan Nagari Mandiri.';
       electron.ipcRenderer.invoke('voice:speakOnce', pesan).catch(() => {});
     }
   }, [loading, status]);
@@ -127,7 +174,7 @@ const BansosPage = () => {
 
           {!status.terdaftar && (
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-              Data e-KTP Anda belum terverifikasi sebagai penerima subsidi pada gelombang ini.<br /><br />
+              {status.message || 'Data e-KTP Anda belum terverifikasi sebagai penerima subsidi pada gelombang ini.'}<br /><br />
               <strong style={{ color: 'white' }}>Terima kasih sudah menggunakan Layanan ANM.</strong>
             </p>
           )}

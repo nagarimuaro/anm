@@ -12,12 +12,50 @@ import SintaOrb from './SintaOrb';
 
 const electron = window.require ? window.require('electron') : null;
 
+const normalizeVoicePath = (path) => {
+  if (!path) return path;
+  const normalized = String(path).trim().toLowerCase();
+  const aliases = {
+    '/pajak': '/scan-rfid-pajak',
+    '/pbb': '/scan-rfid-pajak',
+    '/cek-pajak': '/scan-rfid-pajak',
+    '/pajak-pbb': '/scan-rfid-pajak',
+    '/bansos': '/scan-rfid',
+    '/cek-bansos': '/scan-rfid',
+    '/bantuan-sosial': '/scan-rfid',
+    '/scan-bansos': '/scan-rfid',
+    '/cetak': '/scan-barcode',
+    '/cetak-surat': '/scan-barcode',
+    '/print-surat': '/scan-barcode',
+    '/cetak-ulang': '/scan-barcode',
+    '/cetak-ulang-surat': '/scan-barcode',
+    '/resi': '/scan-barcode',
+    '/cek-resi': '/scan-barcode',
+    '/scan-resi': '/scan-barcode',
+  };
+  return aliases[normalized] || path;
+};
+
 const GlobalVoiceWidget = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const voice = useVoiceSession();
   // Track last handled timestamp to prevent duplicate navigation fires
   const lastHandledTimeRef = useRef(null);
+  const previousPathRef = useRef(location.pathname);
+
+  React.useEffect(() => {
+    const previousPath = previousPathRef.current;
+    const currentPath = location.pathname;
+
+    if (previousPath !== '/' && currentPath === '/') {
+      voice.resetConversation().catch((error) => {
+        console.error('Reset voice conversation failed:', error);
+      });
+    }
+
+    previousPathRef.current = currentPath;
+  }, [location.pathname, voice.resetConversation]);
 
   // Handle navigation actions from AI — keyed on lastActionTime to prevent re-firing
   React.useEffect(() => {
@@ -34,9 +72,10 @@ const GlobalVoiceWidget = () => {
     switch (voice.lastAction) {
       case 'NAVIGATE': {
         if (voice.lastPath) {
-          if (currentPath !== voice.lastPath) {
-            const isInputNik = voice.lastPath === '/input-nik';
-            navigate(voice.lastPath, {
+          const targetPath = normalizeVoicePath(voice.lastPath);
+          if (currentPath !== targetPath) {
+            const isInputNik = targetPath === '/input-nik';
+            navigate(targetPath, {
               state: {
                 nextPath: voice.lastNextPath,
                 fromVoice: isInputNik ? true : undefined,

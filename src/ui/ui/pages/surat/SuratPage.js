@@ -164,7 +164,7 @@ const SuratPage = () => {
   }, [fromVoice, templatesLoading]);
 
   useEffect(() => {
-    // Poll session state setiap 500ms — TIDAK PAKAI LISTENER
+    // Poll session state sebagai fallback; update utama datang dari listener session:update.
     const interval = setInterval(async () => {
       if (electron) {
         try {
@@ -184,7 +184,7 @@ const SuratPage = () => {
           }
         } catch { /* session belum ada */ }
       }
-    }, 500);
+    }, 2000);
 
     return () => clearInterval(interval);
   }, [navigate, warga]);

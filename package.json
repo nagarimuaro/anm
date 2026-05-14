@@ -31,6 +31,8 @@
     "files": [
       "dist/**/*",
       "public/**/*",
+      "!public/assets/background.gif",
+      "!public/audio-test.html",
       "src/app/**/*",
       "src/infrastructure/**/*",
       "src/modules/**/*",
