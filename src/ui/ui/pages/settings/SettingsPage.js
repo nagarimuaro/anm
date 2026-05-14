@@ -20,6 +20,7 @@ const SettingsPage = () => {
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [deviceInfo, setDeviceInfo] = useState(null);
+  const [heartbeatInfo, setHeartbeatInfo] = useState(null);
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
 
   useEffect(() => {
@@ -35,6 +36,9 @@ const SettingsPage = () => {
       });
       electron.ipcRenderer.invoke('device:status').then(res => {
         if (res.status === 'ACTIVATED' && res.data) setDeviceInfo(res.data);
+      }).catch(() => {});
+      electron.ipcRenderer.invoke('device:heartbeatStatus').then(res => {
+        if (res.success) setHeartbeatInfo(res);
       }).catch(() => {});
     }
   }, [isAuthenticated]);
@@ -128,6 +132,26 @@ const SettingsPage = () => {
       }
     } catch (error) {
       alert('Gagal menghapus cache: ' + error.message);
+    } finally {
+      setMaintenanceBusy(false);
+    }
+  };
+
+  const handleSendHeartbeat = async () => {
+    if (!electron || maintenanceBusy) return;
+
+    setMaintenanceBusy(true);
+    try {
+      const res = await electron.ipcRenderer.invoke('device:sendHeartbeat');
+      if (res.success) {
+        setHeartbeatInfo(res);
+        const last = res.lastHeartbeat;
+        alert(`Heartbeat selesai.\nStatus: ${last?.status || '-'}\nPesan: ${last?.message || (last?.success ? 'OK' : '-')}`);
+      } else {
+        alert('Gagal mengirim heartbeat: ' + (res.message || 'Terjadi kesalahan'));
+      }
+    } catch (error) {
+      alert('Gagal mengirim heartbeat: ' + error.message);
     } finally {
       setMaintenanceBusy(false);
     }
@@ -373,7 +397,7 @@ const SettingsPage = () => {
                   </div>
                   <div>
                     <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Device Token</div>
-                    <div style={{ fontSize: 16, fontFamily: 'monospace', color: 'var(--accent-info)', wordBreak: 'break-all' }}>{deviceInfo.device_token || 'Tidak tersedia'}</div>
+                    <div style={{ fontSize: 16, fontFamily: 'monospace', color: 'var(--accent-info)', wordBreak: 'break-all' }}>{deviceInfo.device_token || deviceInfo.token || deviceInfo.api_key || deviceInfo.key || deviceInfo.access_token || 'Tidak tersedia'}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Hardware Fingerprint</div>
@@ -400,11 +424,30 @@ const SettingsPage = () => {
                 <button
                   className="btn"
                   disabled={maintenanceBusy}
+                  style={{ background: 'rgba(16, 185, 129, 0.18)', color: '#86efac', border: '2px solid rgba(16, 185, 129, 0.4)', fontWeight: 600, padding: '18px 16px', borderRadius: '16px', fontSize: 18, opacity: maintenanceBusy ? 0.6 : 1 }}
+                  onClick={handleSendHeartbeat}
+                >
+                  Kirim Heartbeat
+                </button>
+                <button
+                  className="btn"
+                  disabled={maintenanceBusy}
                   style={{ background: 'rgba(59, 130, 246, 0.18)', color: '#93c5fd', border: '2px solid rgba(59, 130, 246, 0.4)', fontWeight: 600, padding: '18px 16px', borderRadius: '16px', fontSize: 18, opacity: maintenanceBusy ? 0.6 : 1 }}
                   onClick={handleClearCache}
                 >
                   🧹 Hapus Cache
                 </button>
+              </div>
+              {heartbeatInfo && (
+                <div style={{ background: 'rgba(0,0,0,0.18)', padding: 16, borderRadius: 12, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.5 }}>
+                  <div style={{ color: 'white', fontWeight: 600, marginBottom: 6 }}>Status Heartbeat</div>
+                  <div>Terakhir: {heartbeatInfo.lastHeartbeat?.at ? new Date(heartbeatInfo.lastHeartbeat.at).toLocaleString('id-ID') : '-'}</div>
+                  <div>Status: {heartbeatInfo.lastHeartbeat?.status || '-'}</div>
+                  <div>Pesan: {heartbeatInfo.lastHeartbeat?.message || (heartbeatInfo.lastHeartbeat?.success ? 'OK' : '-')}</div>
+                  <div style={{ wordBreak: 'break-all' }}>Log: {heartbeatInfo.heartbeatLogPath || '-'}</div>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
                 <button
                   className="btn"
                   disabled={maintenanceBusy}

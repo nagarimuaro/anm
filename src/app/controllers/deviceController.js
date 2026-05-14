@@ -39,6 +39,23 @@ class DeviceController {
       }
     });
 
+    ipcMain.handle('device:heartbeatStatus', async () => {
+      try {
+        return { success: true, ...deviceService.getHeartbeatStatus() };
+      } catch (error) {
+        return { success: false, message: error.message };
+      }
+    });
+
+    ipcMain.handle('device:sendHeartbeat', async () => {
+      try {
+        await deviceService.sendHeartbeat();
+        return { success: true, ...deviceService.getHeartbeatStatus() };
+      } catch (error) {
+        return { success: false, message: error.message, ...deviceService.getHeartbeatStatus() };
+      }
+    });
+
     // Handle OTA Update Download execution
     ipcMain.handle('device:downloadUpdate', async (event, url) => {
       try {

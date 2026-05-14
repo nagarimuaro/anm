@@ -6,13 +6,48 @@ const { app } = require('electron');
 const packageJson = require('../../../package.json');
 
 const CURRENT_VERSION = packageJson.version || "1.0.0";
+const HEARTBEAT_URL = 'https://sintanagari.cloud/api/device/heartbeat';
+const HEARTBEAT_TIMEOUT_MS = 20000;
+const HARDWARE_CHECK_TIMEOUT_MS = 5000;
+
+function withTimeout(promise, timeoutMs, fallbackValue, label) {
+  let timeout;
+  const timeoutPromise = new Promise((resolve) => {
+    timeout = setTimeout(() => {
+      console.warn(`[DeviceService] ${label} timeout setelah ${timeoutMs}ms.`);
+      resolve(fallbackValue);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout));
+}
 
 class DeviceService {
   constructor() {
     // Determine userData path gracefully (app.getPath works in Main Process)
     const userDataPath = app ? app.getPath('userData') : '';
     this.tokenFilePath = path.join(userDataPath, 'device.json');
+    this.heartbeatLogPath = path.join(userDataPath, 'heartbeat.log');
     this.cachedUpdate = null; // Menyimpan info update dari Cloud jika ada
+    this.lastHeartbeat = null;
+  }
+
+  getDeviceToken(savedData) {
+    return savedData?.device_token
+      || savedData?.token
+      || savedData?.api_key
+      || savedData?.key
+      || savedData?.access_token
+      || '';
+  }
+
+  writeHeartbeatLog(message, extra = null) {
+    const line = `[${new Date().toISOString()}] ${message}${extra ? ` ${JSON.stringify(extra)}` : ''}\n`;
+    try {
+      fs.appendFileSync(this.heartbeatLogPath, line, 'utf-8');
+    } catch (error) {
+      console.warn('[Heartbeat] Gagal menulis heartbeat.log:', error.message);
+    }
   }
 
   /**
@@ -109,6 +144,7 @@ class DeviceService {
       };
 
       // Tulis permanen ke `device.json`
+      fs.mkdirSync(path.dirname(this.tokenFilePath), { recursive: true });
       fs.writeFileSync(this.tokenFilePath, JSON.stringify(credentialData, null, 2), 'utf-8');
       
       return credentialData;
@@ -141,7 +177,7 @@ class DeviceService {
         'pdfcreator',
         'doPDF',
       ];
-      const printers = await si.printer();
+      const printers = await withTimeout(si.printer(), HARDWARE_CHECK_TIMEOUT_MS, [], 'Cek printer');
       const physicalPrinters = printers.filter(p => {
         const name = (p.name || '').toLowerCase();
         return !VIRTUAL_PRINTERS.some(vp => name.includes(vp));
@@ -155,7 +191,7 @@ class DeviceService {
       // ====== CEK RFID USB READER ======
       // USB Card Reader umumnya terdeteksi dengan kata kunci berikut:
       const RFID_KEYWORDS = ['rfid', 'nfc', 'smart card', 'card reader', 'contactless', 'acr122', 'acr1252', 'mifare', 'hid', 'input device'];
-      const usbs = await si.usb();
+      const usbs = await withTimeout(si.usb(), HARDWARE_CHECK_TIMEOUT_MS, [], 'Cek USB');
       const hasRfid = usbs.some(u => {
         const name = (u.name || '').toLowerCase();
         return RFID_KEYWORDS.some(kw => name.includes(kw));
@@ -182,13 +218,29 @@ class DeviceService {
   async sendHeartbeat() {
     if (!fs.existsSync(this.tokenFilePath)) {
       console.warn('[Heartbeat] Skip: device.json tidak ditemukan di:', this.tokenFilePath);
+      this.lastHeartbeat = {
+        success: false,
+        status: 'SKIPPED',
+        message: 'device.json tidak ditemukan',
+        at: new Date().toISOString(),
+      };
+      this.writeHeartbeatLog('SKIP device.json tidak ditemukan', { path: this.tokenFilePath });
       return;
     }
       
     try {
       const savedData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf-8'));
-      if (!savedData.device_token) {
-        console.warn('[Heartbeat] Skip: device.json ada, tapi device_token kosong.');
+      const deviceToken = this.getDeviceToken(savedData);
+      if (!deviceToken) {
+        const keys = Object.keys(savedData);
+        console.warn('[Heartbeat] Skip: device.json ada, tapi token kosong. Keys:', keys.join(', '));
+        this.lastHeartbeat = {
+          success: false,
+          status: 'SKIPPED',
+          message: 'Token perangkat tidak ditemukan di device.json',
+          at: new Date().toISOString(),
+        };
+        this.writeHeartbeatLog('SKIP token kosong', { keys });
         return;
       }
 
@@ -198,24 +250,39 @@ class DeviceService {
       const payloadData = {
           ...hardwareStatus,
           current_version: CURRENT_VERSION,
-          platform: process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux')
+          platform: process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux'),
+          device_name: savedData.device_name || undefined,
+          fingerprint: savedData.fingerprint || undefined,
       };
 
-      const response = await fetch('https://sintanagari.cloud/api/device/heartbeat', {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS);
+
+      const response = await fetch(HEARTBEAT_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-            'X-Device-Key': savedData.device_token
+            'X-Device-Key': deviceToken
           },
-          body: JSON.stringify(payloadData)
+          body: JSON.stringify(payloadData),
+          signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       const json = await response.json().catch(() => null);
+      this.lastHeartbeat = {
+        success: response.ok && !!json?.success,
+        status: response.status,
+        message: json?.message || response.statusText || '',
+        at: new Date().toISOString(),
+        payload: payloadData,
+      };
 
       // Validasi Pemutusan Akses Massal dari Admin Web (Revoked)
       if (response.status === 401 || response.status === 403) {
           console.warn(`DEVICE REVOKED: Backend menolak heartbeat (${response.status}).`, json?.message || 'Token kedaluwarsa atau dimatikan Admin.');
+          this.writeHeartbeatLog('REVOKED backend menolak heartbeat', { status: response.status, message: json?.message });
           if (fs.existsSync(this.tokenFilePath)) {
             fs.unlinkSync(this.tokenFilePath);
           }
@@ -224,11 +291,13 @@ class DeviceService {
 
       if (!response.ok) {
           console.warn(`[Heartbeat] Backend menolak request (${response.status}).`, json?.message || 'Tidak ada pesan.');
+          this.writeHeartbeatLog('FAILED backend menolak request', { status: response.status, message: json?.message });
           return;
       }
 
       if (json && json.success) {
           console.log('[Heartbeat] Sinkronisasi latar belakang berhasil dikirim ke SINTANAGARI C-Admin.');
+          this.writeHeartbeatLog('OK heartbeat terkirim', { status: response.status });
           
           const updateObj = json.data?.update;
           if (updateObj && updateObj.available && updateObj.version !== CURRENT_VERSION) {
@@ -237,9 +306,22 @@ class DeviceService {
           } else {
               this.cachedUpdate = null;
           }
+      } else {
+          console.warn('[Heartbeat] Response OK tapi success bukan true.', json);
+          this.writeHeartbeatLog('FAILED response success bukan true', { status: response.status, body: json });
       }
     } catch (error) {
-      console.warn('[Heartbeat Warning] Gagal mencapai server SINTANAGARI:', error.message);
+      const message = error.name === 'AbortError'
+        ? `Request timeout setelah ${HEARTBEAT_TIMEOUT_MS}ms`
+        : error.message;
+      this.lastHeartbeat = {
+        success: false,
+        status: 'ERROR',
+        message,
+        at: new Date().toISOString(),
+      };
+      console.warn('[Heartbeat Warning] Gagal mencapai server SINTANAGARI:', message);
+      this.writeHeartbeatLog('ERROR gagal mencapai server', { message });
     }
   }
 
@@ -248,6 +330,14 @@ class DeviceService {
    */
   getPendingUpdate() {
     return this.cachedUpdate;
+  }
+
+  getHeartbeatStatus() {
+    return {
+      lastHeartbeat: this.lastHeartbeat,
+      tokenFilePath: this.tokenFilePath,
+      heartbeatLogPath: this.heartbeatLogPath,
+    };
   }
 }
 
