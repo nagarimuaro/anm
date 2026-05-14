@@ -1,6 +1,7 @@
 const deviceService = require('../../infrastructure/device/deviceService');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 
 class DeviceController {
   register(ipcMain, mainWindow) {
@@ -19,6 +20,9 @@ class DeviceController {
     ipcMain.handle('device:activate', async (event, token) => {
       try {
         const data = await deviceService.activateDevice(token);
+        deviceService.sendHeartbeat().catch((error) => {
+          console.warn('[Heartbeat Warning] Post-activation heartbeat failed:', error.message);
+        });
         return { success: true, data };
       } catch (error) {
         return { success: false, message: error.message };
@@ -58,6 +62,37 @@ class DeviceController {
         return { success: true, path: destPath };
       } catch (error) {
         console.error('[OTA Updater] Gagal mengunduh file:', error);
+        return { success: false, message: error.message };
+      }
+    });
+
+    // Run downloaded installer, then close the kiosk so files can be replaced.
+    ipcMain.handle('device:installUpdate', async (event, installerPath) => {
+      try {
+        const { app } = require('electron');
+
+        if (process.platform !== 'win32') {
+          throw new Error('Auto install saat ini hanya tersedia untuk Windows installer.');
+        }
+
+        if (!installerPath || !fs.existsSync(installerPath)) {
+          throw new Error('File installer tidak ditemukan.');
+        }
+
+        console.log('[OTA Updater] Menjalankan installer:', installerPath);
+        const child = spawn(installerPath, [], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.unref();
+
+        setTimeout(() => {
+          app.quit();
+        }, 1000);
+
+        return { success: true };
+      } catch (error) {
+        console.error('[OTA Updater] Gagal menjalankan installer:', error);
         return { success: false, message: error.message };
       }
     });

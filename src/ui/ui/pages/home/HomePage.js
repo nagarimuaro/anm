@@ -180,8 +180,13 @@ const HomePage = () => {
                       const result = await electron.ipcRenderer.invoke('device:downloadUpdate', updateInfo.download_url);
                       
                       if (result.success) {
-                        alert(`Download sukses!\nFile tersimpan fisik di: ${result.path}\n\n(Ini membuktikan test payload koneksi backend berhasil 100%)`);
-                        setShowUpdateModal(false);
+                        const installResult = await electron.ipcRenderer.invoke('device:installUpdate', result.path);
+                        if (installResult.success) {
+                          alert('Download selesai. Installer akan dibuka dan aplikasi akan ditutup untuk proses pembaruan.');
+                          setShowUpdateModal(false);
+                        } else {
+                          alert(`Download sukses, tapi gagal menjalankan installer: ${installResult.message}`);
+                        }
                       } else {
                         alert(`Gagal mengunduh file: ${result.message}`);
                       }
@@ -193,7 +198,7 @@ const HomePage = () => {
                   }
                 }}
               >
-                {isDownloading ? 'Mengunduh File...' : 'Download & Update'}
+                {isDownloading ? 'Mengunduh File...' : 'Download & Pasang'}
               </button>
             </div>
           </div>

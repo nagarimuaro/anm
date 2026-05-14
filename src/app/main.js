@@ -28,6 +28,8 @@ const deviceService = require('../infrastructure/device/deviceService');
 // OpenRouter tidak perlu setup lokal — langsung pakai API cloud
 
 let mainWindow;
+let heartbeatInterval = null;
+const HEARTBEAT_INTERVAL_MS = 60 * 1000;
 
 // Izinkan AudioContext tanpa user gesture — diperlukan untuk absensi (face recognition)
 // dan speakOnce yang dipanggil secara programatik bukan dari klik user
@@ -36,6 +38,20 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Audio server disabled (EdgeTTS not used)
 function startAudioServer() {
   console.log('[AudioServer] Disabled for debugging.');
+}
+
+function startDeviceHeartbeat() {
+  if (heartbeatInterval) return;
+
+  deviceService.sendHeartbeat().catch((error) => {
+    console.warn('[Heartbeat Warning] Initial heartbeat failed:', error.message);
+  });
+
+  heartbeatInterval = setInterval(() => {
+    deviceService.sendHeartbeat().catch((error) => {
+      console.warn('[Heartbeat Warning] Scheduled heartbeat failed:', error.message);
+    });
+  }, HEARTBEAT_INTERVAL_MS);
 }
 
 // ========================================
@@ -127,6 +143,7 @@ app.whenReady().then(async () => {
   voiceController.register(ipcMain, window);
   kioskController.register(ipcMain);
   deviceController.register(ipcMain, window);
+  startDeviceHeartbeat();
 
   console.log('✅ ANM ready — Gemini Live mode active');
 
@@ -146,6 +163,11 @@ app.on('window-all-closed', () => {
 
 // Pastikan semua proses background mati saat app akan quit
 app.on('before-quit', () => {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
   // Hentikan semua interval/timeout yang tersisa
   const highestId = setTimeout(() => {}, 0);
   for (let i = 0; i < highestId; i++) {
