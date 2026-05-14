@@ -3,8 +3,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
+const packageJson = require('../../../package.json');
 
-const CURRENT_VERSION = "1.0.0";
+const CURRENT_VERSION = packageJson.version || "1.0.0";
 
 class DeviceService {
   constructor() {
@@ -179,11 +180,17 @@ class DeviceService {
    * Latar Belakang: Sinkronisasi Health Ping Kiosk ke Cloud
    */
   async sendHeartbeat() {
-    if (!fs.existsSync(this.tokenFilePath)) return;
+    if (!fs.existsSync(this.tokenFilePath)) {
+      console.warn('[Heartbeat] Skip: device.json tidak ditemukan di:', this.tokenFilePath);
+      return;
+    }
       
     try {
       const savedData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf-8'));
-      if (!savedData.device_token) return;
+      if (!savedData.device_token) {
+        console.warn('[Heartbeat] Skip: device.json ada, tapi device_token kosong.');
+        return;
+      }
 
       const hardwareStatus = await this.checkHardwareStatus();
 
@@ -204,16 +211,22 @@ class DeviceService {
           body: JSON.stringify(payloadData)
       });
 
+      const json = await response.json().catch(() => null);
+
       // Validasi Pemutusan Akses Massal dari Admin Web (Revoked)
       if (response.status === 401 || response.status === 403) {
-          console.warn('DEVICE REVOKED: Token kedaluwarsa atau dimatikan Admin. Me-reset Kiosk...');
+          console.warn(`DEVICE REVOKED: Backend menolak heartbeat (${response.status}).`, json?.message || 'Token kedaluwarsa atau dimatikan Admin.');
           if (fs.existsSync(this.tokenFilePath)) {
             fs.unlinkSync(this.tokenFilePath);
           }
           return;
       }
 
-      const json = await response.json().catch(() => null);
+      if (!response.ok) {
+          console.warn(`[Heartbeat] Backend menolak request (${response.status}).`, json?.message || 'Tidak ada pesan.');
+          return;
+      }
+
       if (json && json.success) {
           console.log('[Heartbeat] Sinkronisasi latar belakang berhasil dikirim ke SINTANAGARI C-Admin.');
           
