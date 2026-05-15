@@ -31,13 +31,20 @@ class DeviceService {
     this.lastHeartbeat = null;
   }
 
-  getDeviceToken(savedData) {
-    return savedData?.device_token
-      || savedData?.token
-      || savedData?.api_key
-      || savedData?.key
-      || savedData?.access_token
-      || '';
+  getDeviceToken(savedData, { allowLegacyAliases = false } = {}) {
+    if (savedData?.device_token) return savedData.device_token;
+    if (savedData?.token) return savedData.token;
+
+    // Legacy aliases are only accepted while normalizing activation responses.
+    // Heartbeat must not use generic API keys because they can point to another scope/device.
+    if (allowLegacyAliases) {
+      return savedData?.api_key
+        || savedData?.key
+        || savedData?.access_token
+        || '';
+    }
+
+    return '';
   }
 
   writeHeartbeatLog(message, extra = null) {
@@ -96,6 +103,11 @@ class DeviceService {
         return { status: 'INVALID_FINGERPRINT' };
       }
 
+      if (!savedData.device_token && savedData.token) {
+        savedData.device_token = savedData.token;
+        fs.writeFileSync(this.tokenFilePath, JSON.stringify(savedData, null, 2), 'utf-8');
+      }
+
       return { status: 'ACTIVATED', data: savedData };
     } catch (error) {
       console.error('Error reading device.json:', error);
@@ -141,6 +153,10 @@ class DeviceService {
         device_name: hardware.device_name, // Mengirim/menerima nama alat
         activated_at: new Date().toISOString()
       };
+      const normalizedToken = this.getDeviceToken(credentialData, { allowLegacyAliases: true });
+      if (normalizedToken) {
+        credentialData.device_token = normalizedToken;
+      }
 
       // Tulis permanen ke `device.json`
       fs.mkdirSync(path.dirname(this.tokenFilePath), { recursive: true });
@@ -249,9 +265,7 @@ class DeviceService {
       const payloadData = {
           ...hardwareStatus,
           current_version: CURRENT_VERSION,
-          platform: process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux'),
-          device_name: savedData.device_name || undefined,
-          fingerprint: savedData.fingerprint || undefined,
+          platform: process.platform === 'win32' ? 'win' : (process.platform === 'darwin' ? 'mac' : 'linux')
       };
 
       const controller = new AbortController();

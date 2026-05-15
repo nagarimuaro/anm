@@ -397,7 +397,7 @@ const SettingsPage = () => {
                   </div>
                   <div>
                     <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Device Token</div>
-                    <div style={{ fontSize: 16, fontFamily: 'monospace', color: 'var(--accent-info)', wordBreak: 'break-all' }}>{deviceInfo.device_token || deviceInfo.token || deviceInfo.api_key || deviceInfo.key || deviceInfo.access_token || 'Tidak tersedia'}</div>
+                    <div style={{ fontSize: 16, fontFamily: 'monospace', color: 'var(--accent-info)', wordBreak: 'break-all' }}>{deviceInfo.device_token || deviceInfo.token || 'Tidak tersedia'}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Hardware Fingerprint</div>
