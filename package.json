@@ -1,12 +1,15 @@
 {
   "name": "anm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Anjungan Nagari Mandiri — AI Voice Kiosk (Offline-First)",
   "main": "src/app/main.js",
   "scripts": {
     "start": "webpack serve --mode development",
     "electron": "electron .",
     "dev": "concurrently \"npm start\" \"wait-on http://localhost:3002 && npm run electron\"",
+    "postinstall": "node scripts/rebuild-native.js",
+    "rebuild:native": "node scripts/rebuild-native.js",
+    "rebuild:sqlite": "npm rebuild sqlite3",
     "build:web": "webpack --mode production",
     "build:win": "npm run build:web && electron-builder --win --x64"
   },

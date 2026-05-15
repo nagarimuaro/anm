@@ -79,6 +79,13 @@ const HomePage = () => {
       action: () => navigate('/scan-rfid-pajak'),
       color: '#8b5cf6',
     },
+    {
+      icon: '🪪',
+      title: 'Registrasi e-KTP',
+      desc: 'Hubungkan e-KTP/RFID',
+      action: () => navigate('/registrasi-ektp'),
+      color: '#0ea5e9',
+    },
   ];
 
   return (
@@ -260,11 +267,11 @@ const HomePage = () => {
           </p>
         </div>
 
-        {/* Services Grid — 5 columns sejajar */}
+        {/* Services Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
-          gap: '24px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '20px',
           width: '100%',
         }}>
         {menuItems.map((item, i) => (

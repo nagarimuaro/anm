@@ -11,6 +11,9 @@ require('dotenv').config();
 const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:8000/api').replace(/\/api\/?$/, '');
 const TENANT_TOKEN = process.env.TENANT_TOKEN || '';
 const NAGARI_ID = process.env.NAGARI_ID || 'default-nagari';
+const EKTP_VALIDATE_ENDPOINT = process.env.EKTP_VALIDATE_ENDPOINT || '/api/device/ektp-registration/validate';
+const EKTP_REGISTER_ENDPOINT = process.env.EKTP_REGISTER_ENDPOINT || '/api/device/ektp-registration/register';
+const EKTP_CANCEL_ENDPOINT = process.env.EKTP_CANCEL_ENDPOINT || '/api/device/ektp-registration/cancel';
 
 class KioskService {
   /**
@@ -32,12 +35,9 @@ class KioskService {
         try {
           if (fs.existsSync(tokenFilePath)) {
             const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
-            // Coba berbagai nama field yang mungkin dikembalikan API sintanagari.cloud
+            // Heartbeat/API device harus memakai token device, bukan API key umum.
             deviceToken = savedData.device_token
               || savedData.token
-              || savedData.api_key
-              || savedData.key
-              || savedData.access_token
               || '';
             
             if (!deviceToken) {
@@ -155,6 +155,50 @@ class KioskService {
       return await this._request('GET', `/v1/bansos/${nik}`);
     } catch (error) {
       console.error('KioskService: cekBansos error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Validasi kode registrasi e-KTP/RFID dari staff.
+   */
+  async validateEktpRegistrationCode(registrationCode) {
+    try {
+      return await this._request('POST', EKTP_VALIDATE_ENDPOINT, {
+        code: registrationCode,
+      });
+    } catch (error) {
+      console.error('KioskService: validateEktpRegistrationCode error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Hubungkan UID kartu e-KTP/RFID ke warga yang sudah divalidasi.
+   */
+  async registerEktpCard({ code, registration_code, card_uid, card_type = 'KTP' }) {
+    try {
+      return await this._request('POST', EKTP_REGISTER_ENDPOINT, {
+        code: code || registration_code,
+        card_uid,
+        card_type,
+      });
+    } catch (error) {
+      console.error('KioskService: registerEktpCard error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Batalkan flow registrasi agar kode bisa digenerate ulang dari tabel admin.
+   */
+  async cancelEktpRegistration(registrationCode) {
+    try {
+      return await this._request('POST', EKTP_CANCEL_ENDPOINT, {
+        code: registrationCode,
+      });
+    } catch (error) {
+      console.error('KioskService: cancelEktpRegistration error:', error.message);
       return { success: false, message: error.message };
     }
   }

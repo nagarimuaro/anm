@@ -23,6 +23,18 @@ function register(ipc) {
     return await kioskService.cekBansos(nik);
   });
 
+  ipc.handle('kiosk:api:validateEktpRegistrationCode', async (event, registrationCode) => {
+    return await kioskService.validateEktpRegistrationCode(registrationCode);
+  });
+
+  ipc.handle('kiosk:api:registerEktpCard', async (event, data) => {
+    return await kioskService.registerEktpCard(data);
+  });
+
+  ipc.handle('kiosk:api:cancelEktpRegistration', async (event, registrationCode) => {
+    return await kioskService.cancelEktpRegistration(registrationCode);
+  });
+
   ipc.handle('kiosk:api:buatSurat', async (event, data) => {
     return await kioskService.buatSurat(data);
   });

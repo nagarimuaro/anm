@@ -28,11 +28,11 @@ class GeminiLiveService {
       functionDeclarations: [
         {
           name: 'navigate_to_page',
-          description: 'Navigasi ke halaman layanan. Gunakan path yang valid: /input-nik, /profil-warga, /scan-rfid, /scan-rfid-pajak, /buku-tamu, /scan-barcode, /absensi.',
+          description: 'Navigasi ke halaman layanan. Gunakan path yang valid: /input-nik, /profil-warga, /scan-rfid, /scan-rfid-pajak, /registrasi-ektp, /buku-tamu, /scan-barcode, /absensi.',
           parameters: {
             type: 'OBJECT',
             properties: {
-              page: { type: 'STRING', description: "Path valid. Buat/ajukan surat baru pakai '/input-nik'. Cetak/print/cetak ulang surat yang sudah diajukan pakai '/scan-barcode'. Cek bansos pakai '/scan-rfid'. Pajak PBB pakai '/scan-rfid-pajak'. Buku tamu pakai '/buku-tamu'." },
+              page: { type: 'STRING', description: "Path valid. Buat/ajukan surat baru pakai '/input-nik'. Cetak/print/cetak ulang surat yang sudah diajukan pakai '/scan-barcode'. Cek bansos pakai '/scan-rfid'. Pajak PBB pakai '/scan-rfid-pajak'. Registrasi e-KTP/RFID pakai '/registrasi-ektp'. Buku tamu pakai '/buku-tamu'." },
               nextPath: { type: 'STRING', description: "Tujuan selanjutnya. Contoh: jika pengguna ingin buat surat, page='/input-nik' dan nextPath='/profil-warga'." }
             },
             required: ['page']
@@ -144,6 +144,7 @@ ATURAN NAVIGASI:
 - Jika pengguna mengatakan CETAK SURAT, PRINT SURAT, CETAK ULANG SURAT, scan barcode, scan resi, atau cek resi surat, LANGSUNG panggil navigate_to_page(page='/scan-barcode'). Ini BUKAN flow buat surat baru.
 - Jika pengguna ingin cek bansos/bantuan sosial/PKH/BLT, LANGSUNG panggil navigate_to_page(page='/scan-rfid'). JANGAN pakai '/bansos' karena itu halaman hasil setelah scan RFID.
 - Jika pengguna ingin cek Pajak PBB, LANGSUNG panggil navigate_to_page(page='/scan-rfid-pajak'). JANGAN pakai '/pajak'.
+- Jika pengguna ingin registrasi e-KTP, daftar KTP, atau hubungkan RFID warga, LANGSUNG panggil navigate_to_page(page='/registrasi-ektp').
 - Jika pengguna ingin buku tamu, LANGSUNG panggil navigate_to_page(page='/buku-tamu').
 - Jangan pernah meminta NIK secara lisan jika belum memanggil tool navigasi!
 

@@ -246,6 +246,18 @@ body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.btn-outline:hover {
+  background: var(--bg-glass);
+  border-color: var(--accent-light);
+  box-shadow: 0 4px 18px rgba(99, 102, 241, 0.18);
+}
+
 .btn-success {
   background: var(--gradient-success);
   color: white;
