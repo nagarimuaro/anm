@@ -7,6 +7,7 @@ const HomePage = () => {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ percent: 0, received: 0, total: 0 });
   
   // (OpenRouter: cloud API — tidak perlu download/setup lokal)
 
@@ -42,6 +43,29 @@ const HomePage = () => {
       clearInterval(interval);
     };
   }, []);
+
+  // Listen download progress dari Main Process
+  useEffect(() => {
+    const electron = window.require ? window.require('electron') : null;
+    if (!electron) return;
+
+    const handleProgress = (event, data) => {
+      setDownloadProgress(data);
+    };
+
+    electron.ipcRenderer.on('update:downloadProgress', handleProgress);
+    return () => {
+      electron.ipcRenderer.removeListener('update:downloadProgress', handleProgress);
+    };
+  }, []);
+
+  // Helper: format bytes ke KB/MB
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
 
   const menuItems = [
     {
@@ -158,55 +182,116 @@ const HomePage = () => {
               <p style={{ fontSize: '15px' }}>{updateInfo.changelog || 'Perbaikan stabilitas dan kecepatan sistem.'}</p>
             </div>
 
-            <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
-              <button 
-                className="btn btn-outline" 
-                style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)' }}
-                onClick={() => setShowUpdateModal(false)}
-                disabled={isDownloading}
-              >
-                Nanti Saja
-              </button>
-              <button 
-                className="btn" 
-                disabled={isDownloading}
-                style={{ 
-                  flex: 1, 
-                  background: isDownloading ? '#6b7280' : 'var(--accent-light)', 
-                  color: 'white', 
-                  border: 'none', 
-                  fontWeight: 600, 
-                  boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)',
-                  cursor: isDownloading ? 'wait' : 'pointer'
-                }}
-                onClick={async () => {
-                  try {
-                    setIsDownloading(true);
-                    if (window.require) {
+            {/* Progress Bar saat download */}
+            {isDownloading && (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  <span>Mengunduh pembaruan...</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{downloadProgress.percent}%</span>
+                </div>
+                <div style={{
+                  width: '100%',
+                  height: '12px',
+                  background: 'rgba(255,255,255,0.1)',
+                  borderRadius: '99px',
+                  overflow: 'hidden',
+                  border: '1px solid rgba(255,255,255,0.1)'
+                }}>
+                  <div style={{
+                    width: `${downloadProgress.percent}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #6366f1, #818cf8, #a78bfa)',
+                    borderRadius: '99px',
+                    transition: 'width 0.3s ease',
+                    boxShadow: '0 0 12px rgba(99, 102, 241, 0.5)'
+                  }} />
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '6px', textAlign: 'center', opacity: 0.8 }}>
+                  {formatBytes(downloadProgress.received)} / {formatBytes(downloadProgress.total)}
+                </div>
+              </div>
+            )}
+
+            {/* Tombol aksi */}
+            <div style={{ display: 'flex', gap: '16px', marginTop: isDownloading ? '12px' : '16px' }}>
+              {isDownloading ? (
+                /* Saat sedang download: tampilkan tombol Batal Unduh saja */
+                <button 
+                  className="btn" 
+                  style={{ 
+                    flex: 1, 
+                    background: 'rgba(239, 68, 68, 0.9)', 
+                    color: 'white', 
+                    border: '1px solid rgba(239, 68, 68, 0.5)', 
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)'
+                  }}
+                  onClick={async () => {
+                    try {
                       const electron = window.require('electron');
-                      const result = await electron.ipcRenderer.invoke('device:downloadUpdate', updateInfo.download_url);
-                      
-                      if (result.success) {
-                        const installResult = await electron.ipcRenderer.invoke('device:installUpdate', result.path);
-                        if (installResult.success) {
-                          alert('Download selesai. Installer akan dibuka dan aplikasi akan ditutup untuk proses pembaruan.');
-                          setShowUpdateModal(false);
-                        } else {
-                          alert(`Download sukses, tapi gagal menjalankan installer: ${installResult.message}`);
+                      await electron.ipcRenderer.invoke('device:cancelDownload');
+                    } catch (_) {}
+                  }}
+                >
+                  ✕ Batal Unduh
+                </button>
+              ) : (
+                /* Saat idle: tampilkan Nanti Saja + Download & Pasang */
+                <>
+                  <button 
+                    className="btn btn-outline" 
+                    style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)' }}
+                    onClick={() => setShowUpdateModal(false)}
+                  >
+                    Nanti Saja
+                  </button>
+                  <button 
+                    className="btn" 
+                    style={{ 
+                      flex: 1, 
+                      background: 'var(--accent-light)', 
+                      color: 'white', 
+                      border: 'none', 
+                      fontWeight: 600, 
+                      boxShadow: '0 4px 15px rgba(99, 102, 241, 0.4)',
+                      cursor: 'pointer'
+                    }}
+                    onClick={async () => {
+                      try {
+                        setIsDownloading(true);
+                        setDownloadProgress({ percent: 0, received: 0, total: 0 });
+                        if (window.require) {
+                          const electron = window.require('electron');
+                          const result = await electron.ipcRenderer.invoke('device:downloadUpdate', updateInfo.download_url);
+                          
+                          if (result.success) {
+                            const installResult = await electron.ipcRenderer.invoke('device:installUpdate', result.path);
+                            if (installResult.success) {
+                              // App akan quit otomatis
+                              setShowUpdateModal(false);
+                            } else {
+                              alert(`Download sukses, tapi gagal menjalankan installer: ${installResult.message}`);
+                            }
+                          } else if (result.cancelled) {
+                            // Dibatalkan user — tidak perlu alert
+                            console.log('Download dibatalkan.');
+                          } else {
+                            alert(`Gagal mengunduh file: ${result.message}`);
+                          }
                         }
-                      } else {
-                        alert(`Gagal mengunduh file: ${result.message}`);
+                      } catch (e) {
+                        alert('Error: ' + e.message);
+                      } finally {
+                        setIsDownloading(false);
+                        setDownloadProgress({ percent: 0, received: 0, total: 0 });
                       }
-                    }
-                  } catch (e) {
-                    alert('Error: ' + e.message);
-                  } finally {
-                    setIsDownloading(false);
-                  }
-                }}
-              >
-                {isDownloading ? 'Mengunduh File...' : 'Download & Pasang'}
-              </button>
+                    }}
+                  >
+                    ⬇️ Download & Pasang
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

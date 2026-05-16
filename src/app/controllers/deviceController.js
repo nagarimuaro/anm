@@ -56,7 +56,9 @@ class DeviceController {
       }
     });
 
-    // Handle OTA Update Download execution
+    // Handle OTA Update Download execution — with progress reporting
+    let downloadAbortController = null;
+
     ipcMain.handle('device:downloadUpdate', async (event, url) => {
       try {
         const { app } = require('electron');
@@ -64,26 +66,98 @@ class DeviceController {
         
         const destPath = path.join(app.getPath('temp'), 'anm-update.exe');
         
+        // Buat AbortController untuk mendukung pembatalan unduhan
+        downloadAbortController = new AbortController();
+        const { signal } = downloadAbortController;
+
         console.log('[OTA Updater] Memulai unduhan dari:', url);
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
 
         if (!response.ok) {
            throw new Error(`Server menolak unduhan. Status: ${response.status}`);
         }
 
-        // Tulis stream update ke file fisik di Local Temp
-        const arrayBuffer = await response.arrayBuffer();
-        fs.writeFileSync(destPath, Buffer.from(arrayBuffer));
+        // Ambil total ukuran file dari header Content-Length
+        const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+        console.log('[OTA Updater] Ukuran file:', contentLength, 'bytes');
 
-        console.log('[OTA Updater] Unduhan selesai. Tersimpan di:', destPath);
+        // Stream download dengan progress tracking
+        const reader = response.body.getReader();
+        const chunks = [];
+        let receivedLength = 0;
+        let lastReportedPercent = -1;
+
+        while (true) {
+          // Cek apakah sudah dibatalkan
+          if (signal.aborted) {
+            await reader.cancel();
+            throw new Error('Unduhan dibatalkan oleh pengguna.');
+          }
+
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          receivedLength += value.length;
+
+          // Hitung persentase dan kirim ke renderer
+          const percent = contentLength > 0
+            ? Math.round((receivedLength / contentLength) * 100)
+            : 0;
+
+          // Kirim progress hanya jika persentase berubah (mengurangi IPC flood)
+          if (percent !== lastReportedPercent) {
+            lastReportedPercent = percent;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('update:downloadProgress', {
+                percent,
+                received: receivedLength,
+                total: contentLength,
+              });
+            }
+          }
+        }
+
+        // Gabungkan semua chunks ke satu buffer dan tulis ke file
+        const fullBuffer = Buffer.concat(chunks.map(c => Buffer.from(c)));
+        fs.writeFileSync(destPath, fullBuffer);
+
+        // Kirim 100% final
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('update:downloadProgress', {
+            percent: 100,
+            received: receivedLength,
+            total: contentLength,
+          });
+        }
+
+        console.log('[OTA Updater] Unduhan selesai. Tersimpan di:', destPath, `(${receivedLength} bytes)`);
+        downloadAbortController = null;
         return { success: true, path: destPath };
       } catch (error) {
-        console.error('[OTA Updater] Gagal mengunduh file:', error);
-        return { success: false, message: error.message };
+        downloadAbortController = null;
+        // Bersihkan file partial jika ada
+        const { app } = require('electron');
+        const destPath = path.join(app.getPath('temp'), 'anm-update.exe');
+        try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) {}
+
+        const isCancelled = error.name === 'AbortError' || error.message.includes('dibatalkan');
+        console.log('[OTA Updater]', isCancelled ? 'Unduhan dibatalkan.' : `Gagal: ${error.message}`);
+        return { success: false, cancelled: isCancelled, message: isCancelled ? 'Unduhan dibatalkan.' : error.message };
       }
     });
 
-    // Run downloaded installer, then close the kiosk so files can be replaced.
+    // Batalkan unduhan OTA yang sedang berjalan
+    ipcMain.handle('device:cancelDownload', async () => {
+      if (downloadAbortController) {
+        downloadAbortController.abort();
+        console.log('[OTA Updater] Permintaan pembatalan dikirim.');
+        return { success: true };
+      }
+      return { success: false, message: 'Tidak ada unduhan aktif.' };
+    });
+
+    // Run downloaded installer silently, then close the kiosk so files can be replaced.
     ipcMain.handle('device:installUpdate', async (event, installerPath) => {
       try {
         const { app } = require('electron');
@@ -96,16 +170,32 @@ class DeviceController {
           throw new Error('File installer tidak ditemukan.');
         }
 
-        console.log('[OTA Updater] Menjalankan installer:', installerPath);
-        const child = spawn(installerPath, [], {
+        // Resolve install directory — gunakan lokasi exe saat ini agar NSIS
+        // meng-overwrite instalasi yang ada, bukan membuat folder baru.
+        const exePath = app.getPath('exe');
+        const installDir = path.dirname(exePath);
+
+        console.log('[OTA Updater] Menjalankan installer SILENT:', installerPath);
+        console.log('[OTA Updater] Install directory:', installDir);
+
+        // /S          = Silent install (tanpa wizard interaktif)
+        // --force-run = Auto-launch SINTA.exe setelah install selesai
+        // /D=<path>   = Install ke direktori yang sama dengan instalasi saat ini
+        //               PENTING: /D= harus argumen TERAKHIR dan TANPA kutip
+        const args = ['/S', '--force-run', `/D=${installDir}`];
+
+        console.log('[OTA Updater] Spawn args:', args);
+        const child = spawn(installerPath, args, {
           detached: true,
           stdio: 'ignore',
         });
         child.unref();
 
+        // Beri waktu agar installer process benar-benar start sebelum quit
         setTimeout(() => {
+          console.log('[OTA Updater] Menutup aplikasi untuk proses pembaruan...');
           app.quit();
-        }, 1000);
+        }, 2000);
 
         return { success: true };
       } catch (error) {
