@@ -75,11 +75,44 @@ const SuratPage = () => {
     }
   };
 
+  // Deteksi tipe input berdasarkan key/label slot
+  const getSlotInputType = (key) => {
+    if (!key) return 'text';
+    const k = key.toLowerCase();
+    const def = sessionData?.slotDefs?.find(d => d.key === key);
+    const label = def ? def.label.toLowerCase() : '';
+    if (k.includes('waktu') || k.includes('jam') || k.includes('pukul') || label.includes('waktu') || label.includes('jam') || label.includes('pukul')) return 'time';
+    if (k.includes('hari') || label.includes('hari')) return 'day';
+    if (k.includes('tanggal') || k.includes('tgl') || label.includes('tanggal') || label.includes('tgl')) return 'date';
+    return 'text';
+  };
+
+  // Saat mulai edit slot, set input ke nilai slot yang sudah ada (jika ada)
+  const startEditingSlot = (key) => {
+    const currentValue = sessionData?.slots?.[key] || '';
+    setEditingSlot(key);
+    setSlotInput(currentValue);
+    // Sync keyboard ref setelah render
+    setTimeout(() => {
+      if (keyboardRef.current) {
+        keyboardRef.current.setInput(currentValue);
+      }
+    }, 50);
+  };
+
   const handleSaveSlot = async (key) => {
     if (!slotInput.trim()) return;
     if (electron) {
       await electron.ipcRenderer.invoke('voice:keyboardInput', { slotKey: key, value: slotInput });
     }
+    setEditingSlot(null);
+    setSlotInput('');
+    if (keyboardRef.current) {
+      keyboardRef.current.clearInput();
+    }
+  };
+
+  const handleCancelEdit = () => {
     setEditingSlot(null);
     setSlotInput('');
     if (keyboardRef.current) {
@@ -162,6 +195,13 @@ const SuratPage = () => {
       ).catch(() => { });
     }
   }, [fromVoice, templatesLoading]);
+
+  // Kunci konteks AI sesuai fase surat (PILIH → SLOT_FILLING → CONFIRMATION)
+  useEffect(() => {
+    if (electron && phase) {
+      electron.ipcRenderer.invoke('voice:setPageContext', '/surat', phase).catch(() => {});
+    }
+  }, [phase]);
 
   useEffect(() => {
     // Poll session state sebagai fallback; update utama datang dari listener session:update.
@@ -563,11 +603,18 @@ const SuratPage = () => {
       {/* Slot Filling Progress — hanya tampil jika benar-benar sedang slot filling */}
       {selectedSurat && sessionData && (sessionData.phase === 'SLOT_FILLING' || sessionData.phase === 'CONFIRMATION') && (
 
-        <div className="interview-panel glass-card" style={{ marginTop: 16, borderRadius: 24, padding: 'clamp(24px, 3.5vw, 48px) clamp(24px, 4.5vw, 64px)', boxShadow: '0 24px 64px rgba(0,0,0,0.4)', maxWidth: 1600, margin: '0 auto', background: 'rgba(30, 41, 88, 0.6)' }}>
-          <div className="interview-title" style={{ fontSize: 'clamp(26px, 3.2vw, 48px)', fontWeight: 700, letterSpacing: '0.5px', marginBottom: 16, textAlign: 'center' }}>
+        <div style={{ 
+          marginTop: 0, 
+          padding: phase === 'SLOT_FILLING' ? '16px 24px' : 'clamp(24px, 3.5vw, 48px) clamp(24px, 4.5vw, 64px)', 
+          paddingBottom: editingSlot ? 420 : undefined,
+          width: '100%',
+          maxWidth: phase === 'SLOT_FILLING' ? '100%' : 1600, 
+          margin: '0 auto', 
+        }}>
+          <div className="interview-title" style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, textAlign: 'center' }}>
             {phase === 'CONFIRMATION' ? 'Data Lengkap — Tahap Konfirmasi' : 'Mengumpulkan Data Surat'}
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 'clamp(15px, 1.8vw, 26px)', marginBottom: 'clamp(24px, 3vw, 48px)', textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 18, marginBottom: 16, textAlign: 'center' }}>
             {phase === 'CONFIRMATION'
               ? 'Konfirmasi melalui asisten suara: "Ya, benar" atau "Tidak, ubah"'
               : selectedSurat}
@@ -585,25 +632,21 @@ const SuratPage = () => {
                     gap: 'clamp(12px, 1.5vw, 24px)',
                     padding: 'clamp(14px, 1.5vw, 24px) clamp(16px, 2vw, 32px)',
                     borderRadius: 16,
-                    background: value ? 'rgba(52, 211, 153, 0.05)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255,255,255,0.02)'),
-                    border: `1px solid ${value ? 'rgba(52, 211, 153, 0.2)' : (key === sessionData.current_slot ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255,255,255,0.05)')}`,
+                    background: value ? '#0d2818' : (key === sessionData.current_slot ? '#1a1a4e' : '#0f172a'),
+                    border: `2px solid ${value ? '#166534' : (key === sessionData.current_slot ? '#4338ca' : '#1e293b')}`,
                     transition: 'all 0.3s ease',
-                    cursor: !value ? 'pointer' : 'default'
+                    cursor: 'pointer'
                   }}
                     onClick={() => {
-                      if (editingSlot !== key) { // Hapus pengecekan !value agar bisa diedit kapan saja
-                        setEditingSlot(key);
-                        setSlotInput(value || '');
-                        if (keyboardRef.current) {
-                          keyboardRef.current.setInput(value || '');
-                        }
+                      if (editingSlot !== key) {
+                        startEditingSlot(key);
                       }
                     }}>
                     <div style={{
                       width: 32,
                       height: 32,
                       borderRadius: '50%',
-                      background: value ? 'var(--accent-success)' : (key === sessionData.current_slot ? 'var(--accent-light)' : 'rgba(255,255,255,0.05)'),
+                      background: value ? '#10b981' : (key === sessionData.current_slot ? '#6366f1' : '#1e293b'),
                     }}>
                     </div>
                     <span style={{ flex: 1, fontSize: 'clamp(16px, 2.2vw, 32px)', color: value ? 'white' : 'var(--text-secondary)', fontWeight: value ? 600 : 500, textAlign: 'left' }}>{label}</span>
@@ -634,169 +677,19 @@ const SuratPage = () => {
                       <button
                         title="Edit manual"
                         style={{
-                          background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                          background: '#1e293b', border: '2px solid #334155',
                           borderRadius: 12, padding: '16px 24px', cursor: 'pointer',
-                          color: value ? 'var(--accent-success)' : 'var(--text-muted)', fontSize: 28, flexShrink: 0
+                          color: value ? '#10b981' : '#94a3b8', fontSize: 28, flexShrink: 0
                         }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setEditingSlot(key);
-                          setSlotInput(value || '');
-                          if (keyboardRef.current) {
-                            keyboardRef.current.setInput(value || '');
-                          }
+                          startEditingSlot(key);
                         }}
                       >✏️</button>
                     )}
                   </div>
                 );
               })}
-              {/* Virtual Keyboard — Mengambang di bawah layar */}
-              {editingSlot && (() => {
-                const editingDef = sessionData.slotDefs.find(d => d.key === editingSlot);
-                const editingLabel = editingDef ? editingDef.label : editingSlot;
-
-                return (
-                  <>
-                    {/* Overlay transparan tipis agar fokus ke keyboard */}
-                    <div
-                      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingSlot(null);
-                        setSlotInput('');
-                      }}
-                    />
-                    <div style={{
-                      position: 'fixed',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      padding: '24px 32px 40px 32px',
-                      background: 'rgba(15,23,42,0.95)',
-                      backdropFilter: 'blur(16px)',
-                      borderTop: '1px solid rgba(255,255,255,0.1)',
-                      boxShadow: '0 -16px 48px rgba(0,0,0,0.6)',
-                      zIndex: 100,
-                      animation: 'slideUp 0.3s ease-out forwards'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, maxWidth: '1400px', margin: '0 auto 24px auto', gap: 24 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, position: 'relative' }}>
-                          <label style={{ color: 'var(--text-secondary)', fontSize: 20, fontWeight: 500, marginBottom: 8, textAlign: 'left' }}>
-                            Sedang Mengisi: <span style={{ color: 'white', fontWeight: 700 }}>{editingLabel}</span>
-                          </label>
-                          <input
-                            type="text"
-                            autoFocus
-                            value={slotInput}
-                            onChange={e => {
-                              setSlotInput(e.target.value);
-                              if (keyboardRef.current) {
-                                keyboardRef.current.setInput(e.target.value);
-                              }
-                            }}
-                            onKeyDown={e => { if (e.key === 'Enter') handleSaveSlot(editingSlot); }}
-                            placeholder={`Ketik ${editingLabel} di sini...`}
-                            style={{
-                              width: '100%',
-                              background: 'rgba(0,0,0,0.5)',
-                              border: '2px solid rgba(255,255,255,0.2)',
-                              color: 'white',
-                              padding: '24px 32px',
-                              borderRadius: 16,
-                              fontSize: 32,
-                              outline: 'none',
-                              boxShadow: 'inset 0 4px 12px rgba(0,0,0,0.5)'
-                            }}
-                          />
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleSaveSlot(editingSlot); }}
-                          style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', fontSize: 24, padding: '24px 48px', borderRadius: 16, cursor: 'pointer', fontWeight: 700, boxShadow: '0 8px 24px rgba(16,185,129,0.4)' }}
-                        >
-                          SIMPAN
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingSlot(null);
-                            setSlotInput('');
-                          }}
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: '2px solid rgba(239, 68, 68, 0.3)', color: '#f87171', fontSize: 24, padding: '24px 40px', borderRadius: 16, cursor: 'pointer', fontWeight: 600 }}
-                        >
-                          BATAL
-                        </button>
-                      </div>
-                      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-                        <Keyboard
-                          keyboardRef={r => (keyboardRef.current = r)}
-                          onChange={onKeyboardChange}
-                          onKeyPress={onKeyPress}
-                          theme={"hg-theme-default my-dark-theme"}
-                          layout={{
-                            default: [
-                              "1 2 3 4 5 6 7 8 9 0 {bksp}",
-                              "Q W E R T Y U I O P",
-                              "A S D F G H J K L",
-                              "Z X C V B N M",
-                              "{space} {enter}"
-                            ]
-                          }}
-                          display={{
-                            "{bksp}": "Hapus",
-                            "{enter}": "OK / Simpan",
-                            "{space}": "Spasi"
-                          }}
-                          buttonTheme={[
-                            {
-                              class: "hg-dark-btn",
-                              buttons: "1 2 3 4 5 6 7 8 9 0 Q W E R T Y U I O P A S D F G H J K L Z X C V B N M"
-                            },
-                            {
-                              class: "hg-primary-btn",
-                              buttons: "{enter}"
-                            }
-                          ]}
-                        />
-                      </div>
-                      <style>{`
-                    @keyframes slideUp {
-                      from { transform: translateY(100%); }
-                      to { transform: translateY(0); }
-                    }
-                    .my-dark-theme {
-                      background-color: transparent !important;
-                    }
-                    .my-dark-theme .hg-button {
-                      background: rgba(255,255,255,0.08) !important;
-                      color: white !important;
-                      border: 1px solid rgba(255,255,255,0.05) !important;
-                      box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important;
-                      height: 80px !important;
-                      font-size: 28px !important;
-                      border-radius: 16px !important;
-                      margin: 4px !important;
-                    }
-                    .my-dark-theme .hg-button:active {
-                      background: rgba(255,255,255,0.2) !important;
-                      transform: scale(0.95);
-                    }
-                    .my-dark-theme .hg-primary-btn {
-                      background: linear-gradient(135deg, #6366f1, #a855f7) !important;
-                      color: white !important;
-                      font-weight: bold;
-                      border: none !important;
-                    }
-                    @keyframes pulse {
-                      0% { opacity: 0.6; }
-                      50% { opacity: 1; }
-                      100% { opacity: 0.6; }
-                    }
-                  `}</style>
-                    </div>
-                  </>
-                );
-              })()}
             </div>
           )}
 
@@ -867,6 +760,263 @@ const SuratPage = () => {
       >
         {selectedSurat && !phase ? 'Pilih Surat Lain' : 'Kembali ke Profil'}
       </button>
+
+      {/* Virtual Keyboard — mengambang fixed di bawah layar (hanya tampil saat pensil diklik) */}
+      {editingSlot && sessionData && (
+        <div style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '16px 32px 24px 32px',
+          background: '#0f172a',
+          borderTop: '1px solid #1e293b',
+          boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
+          zIndex: 200,
+        }}>
+          {/* Input field + tombol aksi */}
+          {(() => {
+            const inputType = getSlotInputType(editingSlot);
+            const editingLabel = editingSlot ? (sessionData.slotDefs.find(d => d.key === editingSlot)?.label || editingSlot) : '';
+
+            if (inputType === 'day') {
+              // Day selector
+              const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+              return (
+                <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                  <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 12 }}>
+                    Pilih Hari untuk: <span style={{ color: '#6366f1', fontWeight: 700 }}>{editingLabel}</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {days.map(day => (
+                      <button
+                        key={day}
+                        style={{
+                          flex: '1 1 auto', minWidth: 120, padding: '18px 24px', fontSize: 20, fontWeight: 700,
+                          background: slotInput === day ? '#6366f1' : '#1e293b',
+                          border: slotInput === day ? '2px solid #818cf8' : '2px solid #334155',
+                          color: 'white', borderRadius: 12, cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onClick={() => {
+                          setSlotInput(day);
+                          setTimeout(() => handleSaveSlot(editingSlot), 200);
+                        }}
+                      >{day}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+
+            if (inputType === 'time') {
+              // Time picker: jam & menit
+              const hours = Array.from({length: 24}, (_, i) => String(i).padStart(2, '0'));
+              const minutes = ['00', '15', '30', '45'];
+              const [selHour, selMinute] = (slotInput || '').split(':');
+              return (
+                <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                  <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 12 }}>
+                    Pilih Waktu untuk: <span style={{ color: '#6366f1', fontWeight: 700 }}>{editingLabel}</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+                    {/* Jam */}
+                    <div style={{ flex: 1 }}>
+                      <p style={{ color: '#cbd5e1', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Jam</p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
+                        {hours.map(h => (
+                          <button key={h} style={{
+                            padding: '12px', fontSize: 20, fontWeight: 700,
+                            background: selHour === h ? '#6366f1' : '#1e293b',
+                            border: selHour === h ? '2px solid #818cf8' : '2px solid #334155',
+                            color: 'white', borderRadius: 10, cursor: 'pointer',
+                          }}
+                          onClick={() => setSlotInput(`${h}:${selMinute || '00'}`)}
+                          >{h}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Menit */}
+                    <div style={{ width: 200 }}>
+                      <p style={{ color: '#cbd5e1', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Menit</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {minutes.map(m => (
+                          <button key={m} style={{
+                            padding: '14px', fontSize: 20, fontWeight: 700,
+                            background: selMinute === m ? '#6366f1' : '#1e293b',
+                            border: selMinute === m ? '2px solid #818cf8' : '2px solid #334155',
+                            color: 'white', borderRadius: 10, cursor: 'pointer',
+                          }}
+                          onClick={() => setSlotInput(`${selHour || '00'}:${m}`)}
+                          >{m}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Simpan */}
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignSelf: 'flex-end' }}>
+                      <button
+                        onClick={() => { if (slotInput) handleSaveSlot(editingSlot); }}
+                        disabled={!slotInput}
+                        style={{
+                          background: slotInput ? 'linear-gradient(135deg, #10b981, #059669)' : '#334155',
+                          border: 'none', color: 'white', fontSize: 18, padding: '18px 40px',
+                          borderRadius: 12, cursor: slotInput ? 'pointer' : 'not-allowed',
+                          fontWeight: 700, opacity: slotInput ? 1 : 0.5,
+                        }}
+                      >SIMPAN</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            if (inputType === 'date') {
+              return (
+                <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                  <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 12 }}>
+                    Pilih Tanggal untuk: <span style={{ color: '#6366f1', fontWeight: 700 }}>{editingLabel}</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                    <input
+                      type="date"
+                      value={slotInput}
+                      onChange={e => setSlotInput(e.target.value)}
+                      style={{
+                        flex: 1, padding: '16px 24px', fontSize: 24, fontWeight: 600,
+                        background: '#1e293b', border: '2px solid #6366f1', color: 'white',
+                        borderRadius: 12, outline: 'none',
+                        colorScheme: 'dark',
+                      }}
+                    />
+                    <button
+                      onClick={() => { if (slotInput) handleSaveSlot(editingSlot); }}
+                      disabled={!slotInput}
+                      style={{
+                        background: slotInput ? 'linear-gradient(135deg, #10b981, #059669)' : '#334155',
+                        border: 'none', color: 'white', fontSize: 18, padding: '18px 40px',
+                        borderRadius: 12, cursor: slotInput ? 'pointer' : 'not-allowed',
+                        fontWeight: 700, opacity: slotInput ? 1 : 0.5,
+                      }}
+                    >SIMPAN</button>
+                  </div>
+                </div>
+              );
+            }
+
+            // Default: text input + keyboard
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, maxWidth: '1400px', margin: '0 auto 12px auto' }}>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                      Mengisi: <span style={{ color: '#6366f1', fontWeight: 700 }}>
+                        {editingLabel}
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={slotInput}
+                      onChange={e => {
+                        setSlotInput(e.target.value);
+                        if (keyboardRef.current) keyboardRef.current.setInput(e.target.value);
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter' && editingSlot) handleSaveSlot(editingSlot); }}
+                      placeholder={'Ketik di sini atau gunakan keyboard...'}
+                      style={{
+                        width: '100%',
+                        background: '#1e293b',
+                        border: '2px solid #6366f1',
+                        color: 'white',
+                        padding: '14px 20px',
+                        borderRadius: 12,
+                        fontSize: 20,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleSaveSlot(editingSlot)}
+                    disabled={!slotInput.trim()}
+                    style={{
+                      background: !slotInput.trim() ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+                      border: 'none', color: 'white', fontSize: 18, padding: '14px 32px',
+                      borderRadius: 12, cursor: !slotInput.trim() ? 'not-allowed' : 'pointer',
+                      fontWeight: 700, opacity: !slotInput.trim() ? 0.5 : 1,
+                    }}
+                  >
+                    SIMPAN
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+          {/* Keyboard — hanya tampil untuk input type text */}
+          {getSlotInputType(editingSlot) === 'text' && (
+          <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+            <Keyboard
+              keyboardRef={r => (keyboardRef.current = r)}
+              onChange={onKeyboardChange}
+              onKeyPress={onKeyPress}
+              theme={"hg-theme-default surat-kb-theme"}
+              layout={{
+                default: [
+                  "1 2 3 4 5 6 7 8 9 0 {bksp}",
+                  "Q W E R T Y U I O P",
+                  "A S D F G H J K L",
+                  "Z X C V B N M , .",
+                  "{space} {enter}"
+                ]
+              }}
+              display={{
+                "{bksp}": "Hapus",
+                "{enter}": "OK",
+                "{space}": "Spasi"
+              }}
+              buttonTheme={[
+                {
+                  class: "hg-dark-btn",
+                  buttons: "1 2 3 4 5 6 7 8 9 0 Q W E R T Y U I O P A S D F G H J K L Z X C V B N M , ."
+                },
+                {
+                  class: "hg-primary-btn",
+                  buttons: "{enter}"
+                }
+              ]}
+            />
+          </div>
+          )}
+          <style>{`
+            .surat-kb-theme {
+              background-color: transparent !important;
+            }
+            .surat-kb-theme .hg-button {
+              background: #1e293b !important;
+              color: white !important;
+              border: 1px solid #334155 !important;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+              height: 56px !important;
+              font-size: 20px !important;
+              border-radius: 10px !important;
+              margin: 3px !important;
+            }
+            .surat-kb-theme .hg-button:active {
+              background: #334155 !important;
+              transform: scale(0.95);
+            }
+            .surat-kb-theme .hg-primary-btn {
+              background: linear-gradient(135deg, #6366f1, #a855f7) !important;
+              color: white !important;
+              font-weight: bold;
+              border: none !important;
+            }
+            @keyframes pulse {
+              0% { opacity: 0.6; }
+              50% { opacity: 1; }
+              100% { opacity: 0.6; }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 };

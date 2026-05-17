@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Keyboard from 'react-simple-keyboard';
+import 'react-simple-keyboard/build/css/index.css';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -8,7 +10,9 @@ const BukuTamuPage = () => {
   const [nama, setNama] = useState('');
   const [tujuan, setTujuan] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [activeField, setActiveField] = useState('nama'); // 'nama' | 'tujuan' | null
   const hasGreetedRef = useRef(false);
+  const keyboardRef = useRef(null);
 
   // Sambutan saat halaman dibuka
   useEffect(() => {
@@ -24,6 +28,7 @@ const BukuTamuPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!nama.trim() || !tujuan.trim()) return;
     setSubmitted(true);
     if (electron) {
       electron.ipcRenderer.invoke(
@@ -32,6 +37,30 @@ const BukuTamuPage = () => {
       ).catch(() => {});
     }
     setTimeout(() => navigate('/'), 7000);
+  };
+
+  const onKeyboardChange = (input) => {
+    if (activeField === 'nama') {
+      setNama(input);
+    } else if (activeField === 'tujuan') {
+      setTujuan(input);
+    }
+  };
+
+  const onKeyPress = (button) => {
+    if (button === '{enter}') {
+      if (activeField === 'nama' && nama.trim()) {
+        setActiveField('tujuan');
+        if (keyboardRef.current) keyboardRef.current.setInput(tujuan);
+      }
+    }
+  };
+
+  const handleFieldFocus = (field) => {
+    setActiveField(field);
+    if (keyboardRef.current) {
+      keyboardRef.current.setInput(field === 'nama' ? nama : tujuan);
+    }
   };
 
   if (submitted) {
@@ -45,38 +74,176 @@ const BukuTamuPage = () => {
   }
 
   return (
-    <div className="page-enter" style={{ textAlign: 'center', width: '100%', maxWidth: 500, margin: '0 auto' }}>
-      <h2 className="page-title">Buku Tamu</h2>
-      <p className="page-subtitle">Catat kunjungan Anda</p>
+    <div className="page-enter" style={{ textAlign: 'center', width: '100%', maxWidth: 700, margin: '0 auto', paddingBottom: 500, marginTop: -60 }}>
+      <h2 className="page-title" style={{ fontSize: 32, marginBottom: 4 }}>Buku Tamu</h2>
+      <p className="page-subtitle" style={{ marginBottom: 16 }}>Catat kunjungan Anda</p>
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 24 }}>
-        <input
-          type="text"
-          className="form-input"
-          placeholder="Nama Lengkap"
-          value={nama}
-          onChange={(e) => setNama(e.target.value)}
-          required
-        />
-        <textarea
-          className="form-input"
-          placeholder="Tujuan Kunjungan"
-          value={tujuan}
-          onChange={(e) => setTujuan(e.target.value)}
-          required
-        />
-        <button type="submit" className="btn btn-primary btn-lg btn-block" style={{ marginTop: 8 }}>
-          ✓ Simpan
-        </button>
-      </form>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Field: Nama */}
+        <div 
+          onClick={() => handleFieldFocus('nama')}
+          style={{
+            background: activeField === 'nama' ? '#1e293b' : '#0f172a',
+            border: activeField === 'nama' ? '2px solid #6366f1' : '2px solid #334155',
+            borderRadius: 16,
+            padding: '16px 24px',
+            textAlign: 'left',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            Nama Lengkap
+          </label>
+          <div style={{ 
+            color: nama ? 'white' : '#64748b', 
+            fontSize: 22, 
+            fontWeight: 600,
+            minHeight: 32,
+          }}>
+            {nama || 'Ketik nama Anda...'}
+            {activeField === 'nama' && <span style={{ animation: 'blink-cursor 0.8s infinite', color: '#6366f1' }}>|</span>}
+          </div>
+        </div>
 
-      <button
-        className="btn btn-secondary"
-        style={{ marginTop: 16 }}
-        onClick={() => navigate('/')}
-      >
-        ← Batal
-      </button>
+        {/* Field: Tujuan */}
+        <div 
+          onClick={() => handleFieldFocus('tujuan')}
+          style={{
+            background: activeField === 'tujuan' ? '#1e293b' : '#0f172a',
+            border: activeField === 'tujuan' ? '2px solid #6366f1' : '2px solid #334155',
+            borderRadius: 16,
+            padding: '16px 24px',
+            textAlign: 'left',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <label style={{ color: '#94a3b8', fontSize: 14, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+            Tujuan Kunjungan
+          </label>
+          <div style={{ 
+            color: tujuan ? 'white' : '#64748b', 
+            fontSize: 22, 
+            fontWeight: 600,
+            minHeight: 32,
+          }}>
+            {tujuan || 'Ketik tujuan kunjungan...'}
+            {activeField === 'tujuan' && <span style={{ animation: 'blink-cursor 0.8s infinite', color: '#6366f1' }}>|</span>}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+          <button
+            style={{
+              flex: 1,
+              background: 'rgb(239, 68, 68)', border: 'none', color: 'white',
+              fontWeight: 700, borderRadius: '16px', padding: '18px 24px', fontSize: '18px',
+              cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+            }}
+            onClick={() => navigate('/')}
+          >
+            ← Batal
+          </button>
+          <button
+            style={{
+              flex: 2,
+              background: (!nama.trim() || !tujuan.trim()) ? '#334155' : 'linear-gradient(135deg, #10b981, #059669)',
+              border: 'none', color: 'white',
+              fontWeight: 700, borderRadius: '16px', padding: '18px 24px', fontSize: '18px',
+              cursor: (!nama.trim() || !tujuan.trim()) ? 'not-allowed' : 'pointer',
+              fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+              boxShadow: (!nama.trim() || !tujuan.trim()) ? 'none' : '0 4px 15px rgba(16, 185, 129, 0.4)',
+              opacity: (!nama.trim() || !tujuan.trim()) ? 0.6 : 1,
+            }}
+            onClick={handleSubmit}
+            disabled={!nama.trim() || !tujuan.trim()}
+          >
+            ✓ Simpan Kunjungan
+          </button>
+        </div>
+      </div>
+
+      {/* Virtual Keyboard */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '16px 32px 32px 32px',
+        background: '#0f172a',
+        borderTop: '1px solid #1e293b',
+        boxShadow: '0 -8px 32px rgba(0,0,0,0.5)',
+        zIndex: 100,
+      }}>
+        <div style={{ 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          marginBottom: 12, gap: 8,
+          color: '#94a3b8', fontSize: 14, fontWeight: 600,
+        }}>
+          Mengisi: <span style={{ color: '#6366f1', fontWeight: 700 }}>
+            {activeField === 'nama' ? 'Nama Lengkap' : 'Tujuan Kunjungan'}
+          </span>
+        </div>
+        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <Keyboard
+            keyboardRef={r => (keyboardRef.current = r)}
+            onChange={onKeyboardChange}
+            onKeyPress={onKeyPress}
+            theme={"hg-theme-default my-dark-theme"}
+            layout={{
+              default: [
+                "1 2 3 4 5 6 7 8 9 0 {bksp}",
+                "Q W E R T Y U I O P",
+                "A S D F G H J K L",
+                "Z X C V B N M , .",
+                "{space} {enter}"
+              ]
+            }}
+            display={{
+              "{bksp}": "Hapus",
+              "{enter}": activeField === 'nama' ? "Lanjut →" : "OK",
+              "{space}": "Spasi"
+            }}
+            buttonTheme={[
+              {
+                class: "hg-dark-btn",
+                buttons: "1 2 3 4 5 6 7 8 9 0 Q W E R T Y U I O P A S D F G H J K L Z X C V B N M , ."
+              },
+              {
+                class: "hg-primary-btn",
+                buttons: "{enter}"
+              }
+            ]}
+          />
+        </div>
+        <style>{`
+          .my-dark-theme {
+            background-color: transparent !important;
+          }
+          .my-dark-theme .hg-button {
+            background: #1e293b !important;
+            color: white !important;
+            border: 1px solid #334155 !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+            height: 64px !important;
+            font-size: 22px !important;
+            border-radius: 12px !important;
+            margin: 3px !important;
+          }
+          .my-dark-theme .hg-button:active {
+            background: #334155 !important;
+            transform: scale(0.95);
+          }
+          .my-dark-theme .hg-primary-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7) !important;
+            color: white !important;
+            font-weight: bold;
+            border: none !important;
+          }
+        `}</style>
+      </div>
     </div>
   );
 };

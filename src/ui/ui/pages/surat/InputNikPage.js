@@ -75,6 +75,16 @@ const InputNikPage = () => {
     }
   };
 
+  const formatNIK = (val) => {
+    if (!val) return '';
+    let res = '';
+    for (let i = 0; i < val.length; i++) {
+      if (i === 4 || i === 8 || i === 12) res += '-';
+      res += val[i];
+    }
+    return res;
+  };
+
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'OK'];
 
   return (
@@ -94,9 +104,10 @@ const InputNikPage = () => {
         <input
           type="text"
           className="nik-input"
-          value={nik}
+          value={nik ? formatNIK(nik) : ''}
           readOnly
           placeholder="________________"
+          style={{ letterSpacing: nik ? '4px' : 'normal' }}
         />
 
         {/* NIK Progress Dots */}

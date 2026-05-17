@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
 
@@ -6,157 +6,123 @@ const electron = window.require ? window.require('electron') : null;
 
 const ScanRfidPajakPage = () => {
   const navigate = useNavigate();
-  const [rfidValue, setRfidValue] = useState('');
-  const [statusText, setStatusText] = useState('Tempelkan KTP pada Scanner Bawah');
+  const [nopValue, setNopValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-
-  const inputRef = useRef(null);
 
   useEffect(() => {
     let cancelGreeting = null;
-    // Announce instruction
     if (electron && !isProcessing) {
-      cancelGreeting = speakAfterPageReady(electron, 'Untuk mengecek Pajak P B B Anda, silakan tempelkan e-KTP Anda pada alat scanner sensor yang menyala di bawah layar.');
+      cancelGreeting = speakAfterPageReady(electron, 'Untuk mengecek Pajak P B B Anda, silakan masukkan 18 digit Nomor Objek Pajak menggunakan keypad di layar.');
     }
-
-    // Always ensure input is focused to catch the HID reader
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-
-    // Global listener to force focus back if user randomly taps the screen
-    const handleGlobalClick = () => {
-      if (inputRef.current && !isProcessing) {
-        inputRef.current.focus();
-      }
-    };
-    window.addEventListener('click', handleGlobalClick);
-
     return () => {
       if (cancelGreeting) cancelGreeting();
-      window.removeEventListener('click', handleGlobalClick);
       if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
     };
   }, [isProcessing]);
 
-  // Handle hardware scanner input (Types fast and hits Enter)
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      // Mengambil nilai asli dari DOM langsung, bukan dari state React yang mungkin terlambat merender sinkronisasi
-      let codeToProcess = e.currentTarget.value;
-      // Hapus karakter invisible seperti spasi, enter, carriage return
-      codeToProcess = codeToProcess.replace(/[\r\n\s]/g, '').trim().toUpperCase();
-      
-      if (codeToProcess) {
-        processCode(codeToProcess);
+  const formatNOP = (val) => {
+    if (!val) return '';
+    let res = '';
+    for (let i = 0; i < val.length; i++) {
+      if (i === 2 || i === 4 || i === 7 || i === 10 || i === 17) res += '.';
+      else if (i === 13) res += '-';
+      res += val[i];
+    }
+    return res;
+  };
+
+  const handleKeyPress = (key) => {
+    if (key === 'CEK') {
+      if (nopValue.length === 18) {
+        processCode();
+      }
+    } else if (key === '←') {
+      setNopValue(nopValue.slice(0, -1));
+    } else {
+      if (nopValue.length < 18) {
+        setNopValue(nopValue + key);
       }
     }
   };
 
-  const processCode = (code) => {
+  const processCode = () => {
+    if (nopValue.length === 0) return;
     if (isProcessing) return;
     setIsProcessing(true);
-    setStatusText('Memproses data PBB...');
 
     if (electron) {
-      electron.ipcRenderer.invoke('voice:speakOnce', 'e-KTP terdeteksi. Mohon tunggu, sedang mencocokkan data Pajak Bumi dan Bangunan Anda.').catch(() => {});
+      electron.ipcRenderer.invoke('voice:speakOnce', 'Mohon tunggu, sedang memeriksa data Pajak Bumi dan Bangunan Anda.').catch(() => {});
     }
 
-    // Wait a brief moment for UX, then navigate to result page (akan dibuat nanti)
+    // Wait a brief moment for UX, then navigate to result page
     setTimeout(() => {
-      alert(`Fitur integrasi PBB untuk NIK/RFID ${code} sedang dalam tahap pengembangan!`);
+      alert(`Fitur integrasi PBB untuk NOP ${nopValue} sedang dalam tahap pengembangan!`);
       navigate('/');
     }, 2000);
   };
 
+  const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '←', '0', 'CEK'];
+
   return (
-    <div className="page-enter barcode-page">
-      <div className="absensi-header">
+    <div className="page-enter" style={{ textAlign: 'center', width: '100%', maxWidth: 800, margin: '0 auto' }}>
+      <div className="glass-card" style={{ padding: '40px 24px', overflow: 'hidden', position: 'relative' }}>
+        <div style={{
+          height: 6,
+          background: 'var(--gradient-accent)',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+        }} />
         <h2 className="page-title">Pengecekan Pajak PBB</h2>
-        <p className="page-subtitle" style={{ marginBottom: 0 }}>
-          {statusText}
-        </p>
-      </div>
+        <p className="page-subtitle">Masukkan 18 digit Nomor Objek Pajak</p>
 
-      <div className="barcode-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '800px', margin: '0 auto', gap: '32px' }}>
-        
-        {/* RFID Card Animation Box */}
-        <div style={{ margin: '40px 0', transform: 'scale(1.8)' }}>
-          <div className="scanner-animation-box" style={{ 
-              position: 'relative', 
-              width: '280px', 
-              height: '200px', 
-              background: 'var(--bg-glass)', 
-              border: '2px dashed rgba(139, 92, 246, 0.4)', // Purple border
-              borderRadius: '20px', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              overflow: 'visible',
-              boxShadow: '0 8px 32px rgba(139, 92, 246, 0.1)'
-          }}>
-          {/* Internal CSS for RFID Animations */}
-          <style>{`
-            @keyframes rfWavePajak {
-              0% { transform: scale(1); opacity: 0.8; }
-              100% { transform: scale(2.5); opacity: 0; }
-            }
-            @keyframes floatCardPajak {
-              0% { transform: translateY(0px) rotate(-5deg); }
-              50% { transform: translateY(-10px) rotate(-5deg); }
-              100% { transform: translateY(0px) rotate(-5deg); }
-            }
-          `}</style>
-          
-          {/* Signal Waves */}
-          <div style={{ position: 'absolute', width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(139, 92, 246, 0.2)', animation: 'rfWavePajak 2s infinite ease-out' }}></div>
-          <div style={{ position: 'absolute', width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(139, 92, 246, 0.2)', animation: 'rfWavePajak 2s infinite ease-out 1s' }}></div>
-
-          {/* Aesthetic UI e-KTP Card */}
-          <div style={{ position: 'relative', width: '140px', height: '90px', background: 'linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%)', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 10, animation: 'floatCardPajak 3s infinite ease-in-out', display: 'flex', padding: '12px', boxSizing: 'border-box' }}>
-             {/* Card Photo placeholder */}
-             <div style={{ width: '30%', height: '100%', background: 'rgba(0,0,0,0.1)', borderRadius: '4px', marginRight: '10px' }}></div>
-             {/* Text lines placeholder */}
-             <div style={{ width: '60%', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <div style={{ height: '8px', background: 'var(--bg-glass)', borderRadius: '2px', width: '100%' }}></div>
-                <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '80%', marginTop: '4px' }}></div>
-                <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '90%' }}></div>
-                <div style={{ height: '6px', background: 'rgba(0,0,0,0.15)', borderRadius: '2px', width: '60%' }}></div>
-             </div>
-          </div>
-        </div>
-        </div>
-
-        {/* The HID Reader Target Input — Kept Invisible but Focusable */}
         <input
-          ref={inputRef}
           type="text"
-          value={rfidValue}
-          onChange={(e) => setRfidValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isProcessing}
-          style={{
-            position: 'absolute',
-            opacity: 0,
-            pointerEvents: 'none',
-            top: 0,
-            left: 0
-          }}
+          className="nik-input"
+          value={formatNOP(nopValue)}
+          readOnly
+          placeholder="__________________"
+          style={{ letterSpacing: nopValue ? '2px' : 'normal' }}
         />
 
-        {/* Cancel Button */}
-        {!isProcessing && (
-          <button 
-            className="btn btn-outline" 
-            style={{ width: '100%', maxWidth: '400px', borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', marginTop: '20px' }}
-            onClick={() => navigate('/')}
-          >
-            Batalkan dan Kembali
-          </button>
-        )}
+        {/* NOP Progress Dots */}
+        <div className="nik-progress" style={{ gridTemplateColumns: 'repeat(18, 1fr)' }}>
+          {Array.from({ length: 18 }).map((_, i) => (
+            <div key={i} className={`nik-digit ${i < nopValue.length ? 'filled' : ''}`} />
+          ))}
+        </div>
 
+        {isProcessing ? (
+          <div style={{ marginTop: 24 }}>
+            <div className="shimmer" style={{ width: 200, height: 48, borderRadius: 12, margin: '0 auto' }} />
+            <p style={{ color: 'var(--text-secondary)', marginTop: 12, fontSize: 14 }}>Memproses data PBB...</p>
+          </div>
+        ) : (
+          <div className="keyboard-container" style={{ marginTop: '32px', maxWidth: '500px', margin: '32px auto 0' }}>
+            {keys.map((key) => (
+              <button
+                key={key}
+                className={`key-btn ${key === 'CEK' || key === '←' ? 'action' : ''}`}
+                onClick={() => handleKeyPress(key)}
+                disabled={key === 'CEK' && nopValue.length < 18}
+                style={key === 'CEK' && nopValue.length < 18 ? { opacity: 0.4 } : {}}
+              >
+                {key}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      <button
+        className="btn btn-secondary"
+        style={{ marginTop: '32px' }}
+        onClick={() => navigate('/')}
+        disabled={isProcessing}
+      >
+        ← Kembali
+      </button>
     </div>
   );
 };

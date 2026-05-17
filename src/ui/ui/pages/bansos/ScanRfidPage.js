@@ -148,18 +148,45 @@ const ScanRfidPage = () => {
         {!isProcessing && (
           <div style={{ display: 'flex', gap: '16px', width: '100%', maxWidth: '500px', marginTop: '20px' }}>
             <button 
-              className="btn btn-outline" 
-              style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)' }}
+              style={{ 
+                flex: 1, 
+                background: 'rgb(239, 68, 68)', 
+                border: 'none', 
+                color: 'white',
+                fontWeight: 700,
+                borderRadius: '16px',
+                padding: '16px 24px',
+                fontSize: '16px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                transition: 'all 0.2s ease',
+              }}
               onClick={() => navigate('/')}
             >
-              Batalkan dan Kembali
+              Batalkan
             </button>
+            {/* Input Manual dipindahkan dari NIK Input ke Profil Warga agar data konsisten, tapi fallback ini diletakkan jika KTP tak bisa dibaca sama sekali */}
             <button 
-              className="btn btn-primary" 
-              style={{ flex: 1 }}
-              onClick={() => navigate('/input-nik', { state: { nextPath: '/bansos' } })}
+              style={{ 
+                flex: 1, 
+                background: 'linear-gradient(135deg, #3b82f6, #2563eb)', 
+                border: 'none', 
+                color: 'white',
+                fontWeight: 700,
+                borderRadius: '16px',
+                padding: '16px 24px',
+                fontSize: '16px',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)',
+                transition: 'all 0.2s ease',
+              }}
+              onClick={() => {
+                  electron?.ipcRenderer.invoke('voice:speakOnce', 'Masukkan NIK anda secara manual').catch(() => {});
+                  navigate('/input-nik', { state: { nextPath: '/bansos' } })
+              }}
             >
-              Input NIK
+              Input Manual NIK
             </button>
           </div>
         )}

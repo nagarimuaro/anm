@@ -363,11 +363,28 @@ const RegisterEktpPage = () => {
 
       <div style={{ display: 'flex', gap: 16, justifyContent: 'center', marginTop: 28, flexWrap: 'wrap' }}>
         {step === 'scan' && !loading && (
-          <button className="btn btn-outline" onClick={handleChangeCode}>
+          <button 
+            style={{ 
+              background: '#1e3a5f', border: '2px solid #3b82f6', color: '#93c5fd',
+              fontWeight: 700, borderRadius: '12px', padding: '14px 28px', fontSize: '16px',
+              cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+            }}
+            onClick={handleChangeCode}
+          >
             Ganti Kode
           </button>
         )}
-        <button className={step === 'success' ? 'btn btn-primary' : 'btn btn-secondary'} onClick={handleBack}>
+        <button 
+          style={{ 
+            background: step === 'success' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'rgb(239, 68, 68)',
+            border: step === 'success' ? 'none' : 'none',
+            color: 'white',
+            fontWeight: 700, borderRadius: '12px', padding: '14px 28px', fontSize: '16px',
+            cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+            boxShadow: step === 'success' ? '0 4px 15px rgba(99, 102, 241, 0.4)' : 'none',
+          }}
+          onClick={handleBack}
+        >
           {step === 'success' ? 'Selesai' : 'Kembali'}
         </button>
       </div>

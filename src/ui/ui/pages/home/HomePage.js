@@ -340,8 +340,12 @@ const HomePage = () => {
                 /* Saat idle: tampilkan Nanti Saja + Download & Pasang */
                 <>
                   <button 
-                    className="btn btn-outline" 
-                    style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)' }}
+                    style={{ 
+                      flex: 1,
+                      background: '#1e293b', border: '2px solid #475569', color: '#cbd5e1',
+                      fontWeight: 600, borderRadius: '12px', padding: '14px 24px', fontSize: '16px',
+                      cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+                    }}
                     onClick={() => setShowUpdateModal(false)}
                   >
                     Nanti Saja

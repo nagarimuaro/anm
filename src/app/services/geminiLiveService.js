@@ -18,6 +18,7 @@ class GeminiLiveService {
     this.session = null;
     this.isConnecting = false;
     this._manualMode = false;
+    this._currentPage = '/'; // Track halaman aktif untuk page context lock
     this._inputPaused = false;
     this.audioBufferQueue = [];
     this.onResponseCallback = null;
@@ -97,6 +98,136 @@ class GeminiLiveService {
         }
       ]
     }];
+  }
+
+  /**
+   * Page Context Lock — kirim konteks halaman aktif ke Gemini agar AI tidak ngelantur.
+   * Dipanggil setiap kali user navigasi ke halaman baru, atau fase surat berubah.
+   * @param {string} pageId - pathname halaman aktif (e.g. '/input-nik')
+   * @param {string} [phase] - fase internal untuk /surat (SLOT_FILLING, CONFIRMATION)
+   */
+  setPageContext(pageId, phase) {
+    if (!this.session) return;
+
+    // Track halaman aktif untuk blocking navigasi
+    this._currentPage = pageId;
+
+    let contextKey = pageId;
+    if (pageId === '/surat' && phase) {
+      contextKey = `/surat:${phase}`;
+    }
+
+    const CANCEL_RULE = `
+ATURAN PEMBATALAN: Jika user minta batalkan/batal/cancel/kembali ke beranda, WAJIB tanya dulu: "Apakah Anda yakin ingin membatalkan proses ini?" — HANYA jika user menjawab YA/IYA/YAKIN, barulah panggil navigate_to_page(page='/'). Jika user bilang TIDAK/JANGAN, lanjutkan proses di halaman ini.`;
+
+    const PAGE_CONTEXTS = {
+      '/': `[KONTEKS HALAMAN: BERANDA]
+Kamu SEKARANG di halaman utama (Beranda).
+TUGAS: Sambut warga dengan hangat, tanyakan apa yang ingin dilakukan.
+BOLEH: Membantu navigasi ke layanan (surat, bansos, pajak, buku tamu, cetak ulang, absensi). Menjawab pertanyaan umum.
+DILARANG: Memproses data apapun tanpa navigasi dulu. Jangan tanya NIK, jangan isi form, jangan bahas detail layanan sebelum user memilih.
+PENTING: Jika user minta layanan, LANGSUNG panggil navigate_to_page, jangan tanya-tanya lagi.`,
+
+      '/input-nik': `[KONTEKS HALAMAN: INPUT NIK]
+Kamu SEKARANG di halaman input NIK.
+TUGAS: Bantu warga memasukkan Nomor Induk Kependudukan (NIK) 16 digit.
+BOLEH: Meminta NIK, menjelaskan NIK ada di KTP, membantu jika NIK salah format.
+DILARANG: Membahas layanan lain (bansos, pajak, dll). Jangan navigasi ke halaman lain selain membatalkan. Fokus hanya pada input NIK.`,
+
+      '/profil-warga': `[KONTEKS HALAMAN: PROFIL WARGA]
+Kamu SEKARANG di halaman verifikasi profil warga.
+TUGAS: Konfirmasi bahwa data warga yang tampil sudah benar, lalu arahkan untuk melanjutkan.
+BOLEH: Membacakan data profil jika diminta, menjelaskan data yang tampil.
+DILARANG: Membahas layanan lain. Jangan minta NIK lagi.`,
+
+      '/surat': `[KONTEKS HALAMAN: PILIH JENIS SURAT]
+Kamu SEKARANG di halaman pilih jenis surat.
+TUGAS: Bantu warga memilih jenis surat yang ingin dibuat dari daftar yang tersedia di layar.
+BOLEH: Menjelaskan jenis-jenis surat, membantu user memilih.
+DILARANG: Mengisi data surat, membahas layanan lain (bansos, pajak). Jangan navigasi ke halaman lain selain membatalkan.`,
+
+      '/surat:SLOT_FILLING': `[KONTEKS HALAMAN: ISI DATA SURAT]
+Kamu SEKARANG di halaman pengisian data surat (slot filling).
+TUGAS: Tanyakan data surat SATU PER SATU sesuai urutan slot. Setiap user menjawab, WAJIB panggil fill_slot.
+BOLEH: Tanya data surat, isi slot, klarifikasi jawaban user.
+DILARANG: Membahas layanan lain. Jangan navigasi ke halaman lain selain membatalkan. Jangan skip slot. FOKUS pada slot yang sedang aktif saja.`,
+
+      '/surat:CONFIRMATION': `[KONTEKS HALAMAN: KONFIRMASI DATA SURAT]
+Kamu SEKARANG di halaman konfirmasi data surat. Semua data sudah lengkap.
+TUGAS: Bacakan ringkasan data, arahkan warga untuk menekan tombol Cetak jika sudah benar.
+BOLEH: Membacakan ringkasan, menjelaskan cara edit jika ada yang salah.
+DILARANG: Mengisi data baru. Jangan bahas layanan lain. Biarkan warga yang memutuskan.`,
+
+      '/printing': `[KONTEKS HALAMAN: PROSES CETAK]
+Kamu SEKARANG di halaman pencetakan surat.
+TUGAS: Informasikan bahwa surat sedang dicetak, minta warga menunggu.
+BOLEH: Memberitahu status cetak, menjelaskan langkah selanjutnya (ambil surat).
+DILARANG: Membahas apapun selain proses cetak. Jangan bahas layanan lain.`,
+
+      '/scan-rfid': `[KONTEKS HALAMAN: SCAN RFID BANSOS]
+Kamu SEKARANG di halaman scan RFID untuk cek bansos.
+TUGAS: Instruksikan warga untuk menempelkan e-KTP pada scanner di bawah layar.
+BOLEH: Menjelaskan cara scan, membantu jika gagal, menjelaskan apa itu bansos.
+DILARANG: Membahas layanan lain (surat, pajak). Fokus hanya pada scan e-KTP untuk bansos.`,
+
+      '/bansos': `[KONTEKS HALAMAN: HASIL CEK BANSOS]
+Kamu SEKARANG di halaman hasil pengecekan bantuan sosial.
+TUGAS: Jelaskan hasil pengecekan bansos yang tampil di layar.
+BOLEH: Membacakan status bansos (terdaftar/tidak), menjelaskan jenis bantuan (PKH, BPNT, Raskin).
+DILARANG: Membahas layanan lain. Jangan proses data baru.`,
+
+      '/scan-rfid-pajak': `[KONTEKS HALAMAN: CEK PAJAK PBB]
+Kamu SEKARANG di halaman pengecekan Pajak Bumi dan Bangunan (PBB).
+TUGAS: Bantu warga memasukkan Nomor Objek Pajak (NOP) yang ada di SPPT.
+BOLEH: Menjelaskan NOP, membantu input, menjelaskan apa itu PBB.
+DILARANG: Membahas layanan lain (surat, bansos). Fokus hanya pada pajak PBB.`,
+
+      '/scan-barcode': `[KONTEKS HALAMAN: CETAK ULANG SURAT]
+Kamu SEKARANG di halaman scan barcode resi surat.
+TUGAS: Instruksikan warga untuk men-scan barcode yang ada di resi surat.
+BOLEH: Menjelaskan cara scan, membantu jika gagal.
+DILARANG: Membahas pembuatan surat baru, bansos, pajak. Fokus hanya pada scan resi.`,
+
+      '/registrasi-ektp': `[KONTEKS HALAMAN: REGISTRASI e-KTP]
+Kamu SEKARANG di halaman registrasi kartu RFID e-KTP.
+TUGAS: Bantu warga/staff mendaftarkan kartu RFID baru.
+BOLEH: Menjelaskan proses registrasi, membantu input kode registrasi.
+DILARANG: Membahas layanan lain. Fokus hanya pada registrasi kartu.`,
+
+      '/buku-tamu': `[KONTEKS HALAMAN: BUKU TAMU]
+Kamu SEKARANG di halaman buku tamu digital.
+TUGAS: Bantu tamu mengisi data kunjungan (nama, tujuan, instansi).
+BOLEH: Tanya nama tamu, tujuan kunjungan, siapa yang dituju.
+DILARANG: Membahas layanan warga (surat, bansos, pajak). Fokus hanya pada pencatatan tamu.`,
+
+      '/absensi': `[KONTEKS HALAMAN: ABSENSI PEGAWAI]
+Kamu SEKARANG di halaman absensi wajah pegawai.
+TUGAS: Instruksikan pegawai untuk menghadap kamera agar wajah terverifikasi.
+BOLEH: Menjelaskan cara absensi, membantu jika wajah tidak terdeteksi.
+DILARANG: Membahas layanan warga. Fokus hanya pada absensi.`,
+
+      '/rekam-wajah': `[KONTEKS HALAMAN: REKAM WAJAH]
+Kamu SEKARANG di halaman perekaman wajah pegawai baru.
+TUGAS: Instruksikan pegawai untuk menghadap kamera dari berbagai sudut.
+BOLEH: Menjelaskan proses rekam wajah, membantu posisi kamera.
+DILARANG: Membahas apapun selain rekam wajah.`,
+    };
+
+    let contextMsg = PAGE_CONTEXTS[contextKey] || PAGE_CONTEXTS[pageId] || PAGE_CONTEXTS['/'];
+
+    // Tambahkan aturan pembatalan untuk semua halaman kecuali beranda
+    if (pageId !== '/') {
+      contextMsg += CANCEL_RULE;
+    }
+
+    try {
+      this.session.sendClientContent({
+        turns: [{ role: 'user', parts: [{ text: contextMsg }] }]
+      });
+      if (DEBUG_VOICE) console.log(`📍 Page context set: ${contextKey}`);
+    } catch (e) {
+      console.error('[GeminiLive] setPageContext error:', e.message);
+    }
   }
 
   // Event handler
@@ -471,13 +602,23 @@ ATURAN KONFIRMASI DATA:
       let toolResponse = { success: true };
 
       if (fn.name === 'navigate_to_page') {
-        this._emitResponse({
-          type: 'response',
-          action: 'NAVIGATE',
-          path: fn.args.page,
-          nextPath: fn.args.nextPath,
-          timestamp: Date.now()
-        });
+        const targetPage = fn.args.page;
+        const allowedPages = ['/', '/profil-warga']; // Halaman yang boleh navigasi bebas
+        const isGoingHome = targetPage === '/'; // Cancel/batalkan → kembali ke beranda
+
+        if (isGoingHome || allowedPages.includes(this._currentPage)) {
+          // Izinkan: kembali ke beranda (cancel) atau navigasi dari halaman yang diizinkan
+          this._emitResponse({
+            type: 'response',
+            action: 'NAVIGATE',
+            path: targetPage,
+            nextPath: fn.args.nextPath,
+            timestamp: Date.now()
+          });
+        } else {
+          console.log(`🚫 Navigasi DITOLAK: AI coba navigasi ke ${targetPage} dari ${this._currentPage}`);
+          toolResponse = { success: false, error: `Navigasi tidak diizinkan. Kamu sedang di halaman ${this._currentPage}. Selesaikan proses di halaman ini terlebih dahulu. Jangan pindah halaman kecuali kembali ke beranda jika user yakin ingin membatalkan.` };
+        }
       } else if (fn.name === 'set_nik') {
         this._emitResponse({
           type: 'response',

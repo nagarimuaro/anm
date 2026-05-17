@@ -89,6 +89,11 @@ const GlobalVoiceWidget = () => {
       });
     }
 
+    // Kunci konteks AI sesuai halaman aktif
+    if (electron) {
+      electron.ipcRenderer.invoke('voice:setPageContext', currentPath).catch(() => {});
+    }
+
     previousPathRef.current = currentPath;
   }, [location.pathname, voice.resetConversation]);
 

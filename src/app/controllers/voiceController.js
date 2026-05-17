@@ -256,6 +256,17 @@ function register(ipc, mainWindow) {
     }
   });
 
+  // Kunci konteks AI sesuai halaman aktif (page-aware context lock)
+  ipc.handle('voice:setPageContext', async (event, pageId, phase) => {
+    try {
+      voiceService.setPageContext(pageId, phase);
+      return { success: true };
+    } catch (e) {
+      console.error('voice:setPageContext error:', e);
+      return { success: false, error: e.message };
+    }
+  });
+
   // Echo suppression: pause STT + VAD saat audio diputar
   ipc.handle('voice:audioStarted', () => {
     const vadService = require('../../infrastructure/speech/vadService');

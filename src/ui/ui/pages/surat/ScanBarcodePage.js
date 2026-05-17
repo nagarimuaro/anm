@@ -203,8 +203,12 @@ const ScanBarcodePage = () => {
                       : 'Dokumen yang belum ditandatangani tidak bisa dicetak.'}
                   </p>
                   <button 
-                    className="btn btn-outline" 
-                    style={{ width: '100%', borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', padding: '18px', fontSize: '20px' }}
+                    style={{ 
+                      width: '100%', padding: '18px', fontSize: '20px',
+                      background: 'rgb(239, 68, 68)', border: 'none', color: 'white',
+                      fontWeight: 700, borderRadius: '16px', cursor: 'pointer',
+                      fontFamily: 'var(--font-body)', transition: 'all 0.2s ease',
+                    }}
                     onClick={() => navigate('/')}
                   >
                     Kembali ke Beranda
