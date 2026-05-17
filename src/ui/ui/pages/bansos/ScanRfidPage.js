@@ -146,13 +146,22 @@ const ScanRfidPage = () => {
 
         {/* Cancel Button */}
         {!isProcessing && (
-          <button 
-            className="btn btn-outline" 
-            style={{ width: '100%', maxWidth: '400px', borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)', marginTop: '20px' }}
-            onClick={() => navigate('/')}
-          >
-            Batalkan dan Kembali
-          </button>
+          <div style={{ display: 'flex', gap: '16px', width: '100%', maxWidth: '500px', marginTop: '20px' }}>
+            <button 
+              className="btn btn-outline" 
+              style={{ flex: 1, borderColor: 'rgba(255,255,255,0.2)', color: 'var(--text-secondary)' }}
+              onClick={() => navigate('/')}
+            >
+              Batalkan dan Kembali
+            </button>
+            <button 
+              className="btn btn-primary" 
+              style={{ flex: 1 }}
+              onClick={() => navigate('/input-nik', { state: { nextPath: '/bansos' } })}
+            >
+              Input NIK
+            </button>
+          </div>
         )}
 
       </div>

@@ -167,35 +167,57 @@ class DeviceController {
         }
 
         if (!installerPath || !fs.existsSync(installerPath)) {
-          throw new Error('File installer tidak ditemukan.');
+          throw new Error('File installer tidak ditemukan: ' + (installerPath || 'path kosong'));
         }
 
-        // Resolve install directory — gunakan lokasi exe saat ini agar NSIS
-        // meng-overwrite instalasi yang ada, bukan membuat folder baru.
+        // Verifikasi ukuran file — installer corrupt kalau terlalu kecil
+        const fileStat = fs.statSync(installerPath);
+        if (fileStat.size < 1024 * 100) {
+          throw new Error(`File installer terlalu kecil (${fileStat.size} bytes), kemungkinan corrupt.`);
+        }
+
         const exePath = app.getPath('exe');
         const installDir = path.dirname(exePath);
 
-        console.log('[OTA Updater] Menjalankan installer SILENT:', installerPath);
+        console.log('[OTA Updater] Menjalankan installer:', installerPath);
+        console.log('[OTA Updater] Ukuran file:', fileStat.size, 'bytes');
         console.log('[OTA Updater] Install directory:', installDir);
 
-        // /S          = Silent install (tanpa wizard interaktif)
-        // --force-run = Auto-launch SINTA.exe setelah install selesai
-        // /D=<path>   = Install ke direktori yang sama dengan instalasi saat ini
-        //               PENTING: /D= harus argumen TERAKHIR dan TANPA kutip
-        const args = ['/S', '--force-run', `/D=${installDir}`];
+        // Gunakan batch script yang:
+        // 1. Tunggu app tertutup (2 detik)
+        // 2. Jalankan installer dengan admin privileges via PowerShell
+        const batchPath = path.join(app.getPath('temp'), 'anm-updater.bat');
+        const batchContent = [
+          '@echo off',
+          'echo [ANM Updater] Menunggu aplikasi tertutup...',
+          'timeout /t 3 /nobreak >nul',
+          `echo [ANM Updater] Menjalankan installer: ${installerPath}`,
+          `start "" /wait "${installerPath}" /S --force-run /D=${installDir}`,
+          `del "${batchPath}"`,
+        ].join('\r\n');
 
-        console.log('[OTA Updater] Spawn args:', args);
-        const child = spawn(installerPath, args, {
+        fs.writeFileSync(batchPath, batchContent, 'utf-8');
+
+        console.log('[OTA Updater] Batch script dibuat:', batchPath);
+
+        const child = spawn('cmd.exe', ['/c', batchPath], {
           detached: true,
           stdio: 'ignore',
+          windowsHide: true,
         });
+
+        child.on('error', (err) => {
+          console.error('[OTA Updater] Spawn batch gagal:', err.message);
+        });
+
         child.unref();
 
-        // Beri waktu agar installer process benar-benar start sebelum quit
+        console.log('[OTA Updater] Menutup aplikasi...');
+        
+        // Tutup app agar file tidak terkunci saat installer replace
         setTimeout(() => {
-          console.log('[OTA Updater] Menutup aplikasi untuk proses pembaruan...');
           app.quit();
-        }, 2000);
+        }, 1500);
 
         return { success: true };
       } catch (error) {

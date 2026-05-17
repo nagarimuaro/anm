@@ -1,7 +1,7 @@
 {
   "name": "anm",
-  "version": "1.0.1",
-  "description": "Anjungan Nagari Mandiri — AI Voice Kiosk (Offline-First)",
+  "version": "1.0.0",
+  "description": "Anjungan Nagari Mandiri",
   "main": "src/app/main.js",
   "scripts": {
     "start": "webpack serve --mode development",

@@ -76,6 +76,9 @@ class KioskService {
             const parsed = JSON.parse(data);
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve(parsed);
+            } else if (res.statusCode === 404) {
+              // 404 = data tidak ditemukan (e-KTP belum terdaftar, NIK tidak ditemukan, dsb)
+              resolve({ success: false, message: parsed.message || 'Data tidak ditemukan', statusCode: 404 });
             } else if (res.statusCode === 422) {
               // 422 = business logic rejection (misal: "sudah absen")
               // Resolve sebagai { success: false } agar frontend bisa tampilkan pesan yang ramah
@@ -152,7 +155,7 @@ class KioskService {
    */
   async cekBansos(nik) {
     try {
-      return await this._request('GET', `/v1/bansos/${nik}`);
+      return await this._request('POST', '/api/device/bansos/check', { nik });
     } catch (error) {
       console.error('KioskService: cekBansos error:', error.message);
       return { success: false, message: error.message };
