@@ -65,7 +65,7 @@ const ScanRfidPage = () => {
 
     // Wait a brief moment for UX, then navigate to bansos result
     setTimeout(() => {
-      navigate('/bansos', { state: { nik: code } });
+      navigate('/bansos', { state: { card_uid: code } });
     }, 2000);
   };
 

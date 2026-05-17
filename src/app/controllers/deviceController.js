@@ -157,10 +157,12 @@ class DeviceController {
       return { success: false, message: 'Tidak ada unduhan aktif.' };
     });
 
-    // Run downloaded installer silently, then close the kiosk so files can be replaced.
-    ipcMain.handle('device:installUpdate', async (event, installerPath) => {
+    ipcMain.handle('device:installUpdate', async (event, params) => {
       try {
         const { app } = require('electron');
+        // Support both legacy (string) and new (object) call format
+        const installerPath = typeof params === 'string' ? params : params?.installerPath;
+        const updateInfo = typeof params === 'object' ? params?.updateInfo : null;
 
         if (process.platform !== 'win32') {
           throw new Error('Auto install saat ini hanya tersedia untuk Windows installer.');
@@ -309,27 +311,17 @@ class DeviceController {
           `start "" mshta.exe "${htaPath}"`,
           'echo [ANM Updater] Menunggu aplikasi tertutup...',
           'timeout /t 5 /nobreak >nul',
-          `echo [ANM Updater] Menjalankan installer: ${installerPath}`,
           '',
-          'REM Jalankan installer langsung (blocking) — batch otomatis menunggu selesai',
-          `"${installerPath}" /S --force-run /D=${installDir}`,
+          'echo [ANM Updater] Menjalankan installer (elevated)...',
+          'REM Gunakan PowerShell untuk elevasi UAC + Wait agar batch benar-benar tunggu selesai',
+          `powershell -Command "Start-Process -FilePath '${installerPath.replace(/'/g, "''")}' -ArgumentList '/S /D=${installDir.replace(/'/g, "''")}' -Verb RunAs -Wait"`,
           '',
-          'REM Safety delay — tunggu subprocess installer selesai sepenuhnya',
-          'echo [ANM Updater] Menunggu installer selesai...',
-          'timeout /t 10 /nobreak >nul',
-          '',
-          'REM Loop: pastikan tidak ada proses installer yang masih jalan',
-          `:waitloop`,
-          `tasklist /FI "IMAGENAME eq ${path.basename(installerPath)}" 2>nul | find /I "${path.basename(installerPath)}" >nul`,
-          'if not errorlevel 1 (',
-          '  echo [ANM Updater] Installer masih berjalan, menunggu...',
-          '  timeout /t 3 /nobreak >nul',
-          '  goto waitloop',
-          ')',
+          'echo [ANM Updater] Installer selesai. Menunggu app terbuka...',
+          'timeout /t 5 /nobreak >nul',
           '',
           'echo [ANM Updater] Menutup progress window...',
           'taskkill /f /im mshta.exe >nul 2>&1',
-          `echo [ANM Updater] Membersihkan file...`,
+          'echo [ANM Updater] Membersihkan file...',
           'timeout /t 2 /nobreak >nul',
           `del /f /q "${installerPath}" >nul 2>&1`,
           `del /f /q "${htaPath}" >nul 2>&1`,

@@ -19,8 +19,8 @@ function register(ipc) {
     return await kioskService.getWarga(nik);
   });
 
-  ipc.handle('kiosk:api:cekBansos', async (event, nik) => {
-    return await kioskService.cekBansos(nik);
+  ipc.handle('kiosk:api:cekBansos', async (event, params) => {
+    return await kioskService.cekBansos(params);
   });
 
   ipc.handle('kiosk:api:validateEktpRegistrationCode', async (event, registrationCode) => {

@@ -66,6 +66,8 @@ const BansosPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const nik = location.state?.nik;
+  const cardUid = location.state?.card_uid;
+  const identifier = nik || cardUid; // Salah satu harus ada
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const hasGreetedRef = useRef(false);
@@ -84,14 +86,14 @@ const BansosPage = () => {
 
   useEffect(() => {
     const checkBansos = async () => {
-      if (!nik) {
+      if (!identifier) {
         setStatus({
           nik: '',
           nama: '-',
           alamat: '-',
           terdaftar: false,
           bantuan: [],
-          message: 'NIK tidak ditemukan. Silakan scan e-KTP terlebih dahulu.',
+          message: 'NIK tidak ditemukan. Silakan scan e-KTP atau input NIK terlebih dahulu.',
         });
         setLoading(false);
         return;
@@ -99,11 +101,13 @@ const BansosPage = () => {
 
       if (electron) {
         try {
-          const result = await electron.ipcRenderer.invoke('kiosk:api:cekBansos', nik);
-          setStatus(normalizeBansosStatus(result, nik));
+          // Kirim field yang sesuai: nik untuk input manual, card_uid untuk RFID
+          const params = nik ? { nik } : { card_uid: cardUid };
+          const result = await electron.ipcRenderer.invoke('kiosk:api:cekBansos', params);
+          setStatus(normalizeBansosStatus(result, identifier));
         } catch (error) {
           setStatus({
-            nik,
+            nik: identifier,
             nama: '-',
             alamat: '-',
             terdaftar: false,
@@ -113,7 +117,7 @@ const BansosPage = () => {
         }
       } else {
         setStatus({
-          nik,
+          nik: identifier,
           nama: '-',
           alamat: '-',
           terdaftar: false,
@@ -124,7 +128,7 @@ const BansosPage = () => {
       setLoading(false);
     };
     checkBansos();
-  }, [nik]);
+  }, [nik, cardUid, identifier]);
 
   useEffect(() => {
     if (!loading && status && electron) {

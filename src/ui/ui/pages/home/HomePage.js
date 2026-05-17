@@ -366,7 +366,7 @@ const HomePage = () => {
                           const result = await electron.ipcRenderer.invoke('device:downloadUpdate', updateInfo.download_url);
                           
                           if (result.success) {
-                            const installResult = await electron.ipcRenderer.invoke('device:installUpdate', result.path);
+                            const installResult = await electron.ipcRenderer.invoke('device:installUpdate', { installerPath: result.path, updateInfo: updateInfo || {} });
                             if (installResult.success) {
                               // App akan quit otomatis
                               setShowUpdateModal(false);

@@ -159,11 +159,14 @@ class KioskService {
   }
 
   /**
-   * Cek status bansos by NIK
+   * Cek status bansos by NIK atau card_uid (RFID)
+   * @param {Object} params - { nik?: string, card_uid?: string }
    */
-  async cekBansos(nik) {
+  async cekBansos(params) {
     try {
-      return await this._request('POST', '/api/device/bansos/check', { nik });
+      // Support legacy: jika params string, anggap sebagai NIK
+      const body = typeof params === 'string' ? { nik: params } : params;
+      return await this._request('POST', '/api/device/bansos/check', body);
     } catch (error) {
       console.error('KioskService: cekBansos error:', error.message);
       return { success: false, message: error.message };
