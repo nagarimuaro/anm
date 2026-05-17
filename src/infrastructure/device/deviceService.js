@@ -29,6 +29,8 @@ class DeviceService {
     this.heartbeatLogPath = path.join(userDataPath, 'heartbeat.log');
     this.cachedUpdate = null; // Menyimpan info update dari Cloud jika ada
     this.lastHeartbeat = null;
+    this._hwCache = null;
+    this._hwCacheAt = 0;
   }
 
   getDeviceToken(savedData, { allowLegacyAliases = false } = {}) {
@@ -50,6 +52,14 @@ class DeviceService {
   writeHeartbeatLog(message, extra = null) {
     const line = `[${new Date().toISOString()}] ${message}${extra ? ` ${JSON.stringify(extra)}` : ''}\n`;
     try {
+      // Log rotation: potong jika > 100KB
+      try {
+        const stat = fs.statSync(this.heartbeatLogPath);
+        if (stat.size > 100 * 1024) {
+          const content = fs.readFileSync(this.heartbeatLogPath, 'utf-8').split('\n');
+          fs.writeFileSync(this.heartbeatLogPath, content.slice(-200).join('\n'), 'utf-8');
+        }
+      } catch (_) { /* file belum ada */ }
       fs.appendFileSync(this.heartbeatLogPath, line, 'utf-8');
     } catch (error) {
       console.warn('[Heartbeat] Gagal menulis heartbeat.log:', error.message);
@@ -175,6 +185,10 @@ class DeviceService {
    * Mengukur kesehatan koneksi alat fisik secara nyata asinkron
    */
   async checkHardwareStatus() {
+    // Cache hardware status 5 menit (WMI queries lambat di Windows)
+    if (this._hwCache && Date.now() - this._hwCacheAt < 5 * 60 * 1000) {
+      return this._hwCache;
+    }
     try {
       const payloads = { cpu: 'ok', printer: 'error', rfid: 'error', webcam: 'error' };
       
@@ -221,6 +235,8 @@ class DeviceService {
       });
       if (hasWebcam) payloads.webcam = 'ok';
 
+      this._hwCache = payloads;
+      this._hwCacheAt = Date.now();
       return payloads;
     } catch (e) {
       return { cpu: 'ok', printer: 'unknown', rfid: 'unknown', webcam: 'unknown' };

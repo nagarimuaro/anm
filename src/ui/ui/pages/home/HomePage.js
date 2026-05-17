@@ -8,6 +8,7 @@ const HomePage = () => {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ percent: 0, received: 0, total: 0 });
+  const [postUpdate, setPostUpdate] = useState(null);
   
   // (OpenRouter: cloud API — tidak perlu download/setup lokal)
 
@@ -15,6 +16,17 @@ const HomePage = () => {
     // Hentikan suara dari halaman sebelumnya saat kembali ke beranda
     const electron = window.require ? window.require('electron') : null;
     if (electron) electron.ipcRenderer.invoke('voice:stopSpeaking').catch(() => {});
+
+    // Cek apakah app baru saja di-update
+    if (electron) {
+      electron.ipcRenderer.invoke('device:checkPostUpdate').then((res) => {
+        if (res?.updated) {
+          setPostUpdate(res);
+          // Auto-dismiss setelah 8 detik
+          setTimeout(() => setPostUpdate(null), 8000);
+        }
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -131,7 +143,95 @@ const HomePage = () => {
           70% { box-shadow: 0 0 0 15px rgba(79, 70, 229, 0); }
           100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); }
         }
+        @keyframes successPop {
+          0% { transform: scale(0.8); opacity: 0; }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes confetti {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(60px) rotate(360deg); opacity: 0; }
+        }
       `}</style>
+
+      {/* Post-Update Success Dialog */}
+      {postUpdate && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 200,
+          animation: 'fadeSlideDown 0.3s ease'
+        }}>
+          <div className="glass-card" style={{
+            padding: '48px 40px',
+            maxWidth: '480px',
+            width: '90%',
+            textAlign: 'center',
+            animation: 'successPop 0.5s ease both'
+          }}>
+            <div style={{ fontSize: '64px', marginBottom: '16px' }}>🎉</div>
+            <h2 style={{
+              fontSize: '28px',
+              color: '#10b981',
+              fontFamily: 'var(--font-heading)',
+              fontWeight: '700',
+              marginBottom: '12px'
+            }}>
+              Pembaruan Berhasil!
+            </h2>
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              borderRadius: '12px',
+              padding: '16px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '16px'
+            }}>
+              <span style={{ color: 'var(--text-secondary)', fontSize: '15px' }}>
+                v{postUpdate.previousVersion}
+              </span>
+              <span style={{ color: '#10b981', fontSize: '20px' }}>→</span>
+              <span style={{ color: '#10b981', fontSize: '18px', fontWeight: '700' }}>
+                v{postUpdate.currentVersion}
+              </span>
+            </div>
+            <p style={{
+              color: 'var(--text-secondary)',
+              fontSize: '15px',
+              lineHeight: '1.6',
+              marginBottom: '24px'
+            }}>
+              Sistem telah diperbarui ke versi terbaru.
+              Terima kasih telah menggunakan Anjungan Nagari Mandiri.
+            </p>
+            <button
+              className="btn"
+              style={{
+                background: 'linear-gradient(135deg, #10b981, #059669)',
+                color: 'white',
+                border: 'none',
+                fontWeight: '600',
+                padding: '14px 48px',
+                fontSize: '16px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)'
+              }}
+              onClick={() => setPostUpdate(null)}
+            >
+              Mengerti
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Update Icon */}
       {updateInfo && !showUpdateModal && (

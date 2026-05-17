@@ -88,6 +88,7 @@ const SintaPixiCanvas = () => {
         let lastViseme = 'idle';
         let framesSinceLastChange = 0;
         let lastTextureKey = 'idle';
+        let idleFrames = 0;
 
         app.ticker.add(() => {
           const rms = window.currentVoiceRMS || 0;
@@ -96,6 +97,14 @@ const SintaPixiCanvas = () => {
           tickCount++;
           framesSinceLastChange++;
           
+          // Skip processing saat idle lama (hemat GPU)
+          if (rms < 10 && lastTextureKey === 'idle') {
+            idleFrames++;
+            if (idleFrames > 60) return; // >2 detik diam, skip
+          } else {
+            idleFrames = 0;
+          }
+
           let targetViseme = 'idle';
           
           // Jika suara cukup keras (sedang bicara)

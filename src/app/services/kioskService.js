@@ -16,6 +16,10 @@ const EKTP_REGISTER_ENDPOINT = process.env.EKTP_REGISTER_ENDPOINT || '/api/devic
 const EKTP_CANCEL_ENDPOINT = process.env.EKTP_CANCEL_ENDPOINT || '/api/device/ektp-registration/cancel';
 
 class KioskService {
+  constructor() {
+    this._cachedDeviceToken = null;
+  }
+
   /**
    * HTTP request helper
    */
@@ -31,23 +35,27 @@ class KioskService {
         const userDataPath = app ? app.getPath('userData') : '';
         const tokenFilePath = path.join(userDataPath, 'device.json');
         
-        let deviceToken = '';
-        try {
-          if (fs.existsSync(tokenFilePath)) {
-            const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
-            // Heartbeat/API device harus memakai token device, bukan API key umum.
-            deviceToken = savedData.device_token
-              || savedData.token
-              || '';
-            
-            if (!deviceToken) {
-              console.warn('[KioskAPI] device.json ditemukan tapi tidak ada token field. Keys:', Object.keys(savedData).join(', '));
+        let deviceToken = this._cachedDeviceToken || '';
+        if (!deviceToken) {
+          try {
+            if (fs.existsSync(tokenFilePath)) {
+              const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
+              // Heartbeat/API device harus memakai token device, bukan API key umum.
+              deviceToken = savedData.device_token
+                || savedData.token
+                || '';
+              
+              if (!deviceToken) {
+                console.warn('[KioskAPI] device.json ditemukan tapi tidak ada token field. Keys:', Object.keys(savedData).join(', '));
+              } else {
+                this._cachedDeviceToken = deviceToken;
+              }
+            } else {
+              console.warn('[KioskAPI] device.json tidak ditemukan di:', tokenFilePath);
             }
-          } else {
-            console.warn('[KioskAPI] device.json tidak ditemukan di:', tokenFilePath);
+          } catch (e) {
+            console.warn('[KioskAPI] Gagal baca device.json:', e.message);
           }
-        } catch (e) {
-          console.warn('[KioskAPI] Gagal baca device.json:', e.message);
         }
 
         const bodyString = body ? JSON.stringify(body) : '';

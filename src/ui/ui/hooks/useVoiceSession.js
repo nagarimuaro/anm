@@ -49,6 +49,7 @@ export default function useVoiceSession(disableMic = false) {
   const activeSourcesRef = useRef(new Set());
   const aiPlaybackPausedRef = useRef(null);
   const queuedAiPlaybackRef = useRef([]);
+  const lipsyncRafRef = useRef(null);
 
   // ── Mic Management (Inline AudioWorklet — terbukti bekerja di test page) ──
   const openMic = useCallback(async () => {
@@ -236,9 +237,9 @@ export default function useVoiceSession(disableMic = false) {
           window.currentVoiceRMS = 0;
           window.currentPhoneme = 'idle';
         }
-        requestAnimationFrame(updateLipsync);
+        lipsyncRafRef.current = requestAnimationFrame(updateLipsync);
       };
-      requestAnimationFrame(updateLipsync);
+      lipsyncRafRef.current = requestAnimationFrame(updateLipsync);
     }
   }, []);
 
@@ -378,8 +379,14 @@ export default function useVoiceSession(disableMic = false) {
 
     // Hentikan pemutaran PCM jika sedang berjalan
     stopPlayback();
+    // Cancel lipsync animation loop
+    if (lipsyncRafRef.current) {
+      cancelAnimationFrame(lipsyncRafRef.current);
+      lipsyncRafRef.current = null;
+    }
     if (playbackCtxRef.current && playbackCtxRef.current.state !== 'closed') {
-      playbackCtxRef.current.suspend(); // Atau close()
+      playbackCtxRef.current.close().catch(() => {});
+      playbackCtxRef.current = null;
     }
 
     if (electron) {
@@ -670,6 +677,16 @@ export default function useVoiceSession(disableMic = false) {
       audioPlayerRef.current.pause();
       isPlayingRef.current = false;
       isGeminiPlaybackActiveRef.current = false;
+      // Cleanup lipsync rAF loop
+      if (lipsyncRafRef.current) {
+        cancelAnimationFrame(lipsyncRafRef.current);
+        lipsyncRafRef.current = null;
+      }
+      // Close playback AudioContext to free audio thread
+      if (playbackCtxRef.current && playbackCtxRef.current.state !== 'closed') {
+        playbackCtxRef.current.close().catch(() => {});
+        playbackCtxRef.current = null;
+      }
     };
   }, [closeMic]);
 

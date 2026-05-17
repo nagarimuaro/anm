@@ -14,6 +14,7 @@ const SEARCH_API_TIMEOUT_MS = Number(process.env.SEARCH_API_TIMEOUT_MS || 8000);
 class GeminiLiveService {
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    this._currentApiKey = process.env.GEMINI_API_KEY;
     this.session = null;
     this.isConnecting = false;
     this._manualMode = false;
@@ -119,7 +120,11 @@ class GeminiLiveService {
       } catch (dbErr) {
         console.error("Gagal membaca API key dari DB:", dbErr);
       }
-      this.ai = new GoogleGenAI({ apiKey });
+      // Reuse AI instance jika API key tidak berubah (hemat memory)
+      if (!this.ai || this._currentApiKey !== apiKey) {
+        this.ai = new GoogleGenAI({ apiKey });
+        this._currentApiKey = apiKey;
+      }
 
       // Kita gunakan model dari .env (default: gemini-1.5-flash-8b yang merupakan model termurah)
       const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash-8b';
@@ -305,7 +310,11 @@ ATURAN KONFIRMASI DATA:
           apiKey = row.value;
         }
       } catch (dbErr) {}
-      this.ai = new GoogleGenAI({ apiKey });
+      // Reuse AI instance jika API key tidak berubah (hemat memory)
+      if (!this.ai || this._currentApiKey !== apiKey) {
+        this.ai = new GoogleGenAI({ apiKey });
+        this._currentApiKey = apiKey;
+      }
 
       speakSession = await this.ai.live.connect({
         model: modelName,

@@ -96,6 +96,11 @@ function createTables() {
       WHERE last_used_at IS NOT NULL AND last_used_at < datetime('now', '-30 days')
     `);
 
+    // Cleanup: hapus sessions > 30 hari agar tabel tidak membengkak
+    db.run(`
+      DELETE FROM sessions WHERE ended_at IS NOT NULL AND ended_at < datetime('now', '-30 days')
+    `);
+
     console.log('📦 Database tables ready.');
   });
 }
