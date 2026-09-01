@@ -87,10 +87,16 @@ class KioskService {
             } else if (res.statusCode === 404) {
               // 404 = data tidak ditemukan (e-KTP belum terdaftar, NIK tidak ditemukan, dsb)
               resolve({ success: false, message: parsed.message || 'Data tidak ditemukan', statusCode: 404 });
+            } else if (res.statusCode === 409) {
+              // 409 = konflik bisnis yang perlu ditampilkan ramah di UI
+              // Contoh: buku tamu sudah diisi hari ini.
+              resolve({ ...parsed, success: false, statusCode: 409 });
             } else if (res.statusCode === 422) {
               // 422 = business logic rejection (misal: "sudah absen")
               // Resolve sebagai { success: false } agar frontend bisa tampilkan pesan yang ramah
-              resolve({ success: false, message: parsed.message || 'Permintaan tidak dapat diproses', statusCode: 422 });
+              resolve({ ...parsed, success: false, message: parsed.message || 'Permintaan tidak dapat diproses', statusCode: 422 });
+            } else if (res.statusCode === 401 || res.statusCode === 403) {
+              resolve({ ...parsed, success: false, message: parsed.message || 'Perangkat belum terotorisasi', statusCode: res.statusCode });
             } else {
               reject(new Error(`Backend error ${res.statusCode}: ${parsed.message || data}`));
             }
@@ -169,6 +175,30 @@ class KioskService {
       return await this._request('POST', '/api/device/bansos/check', body);
     } catch (error) {
       console.error('KioskService: cekBansos error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Simpan buku tamu digital.
+   */
+  async createBukuTamu(data) {
+    try {
+      return await this._request('POST', '/api/device/buku-tamu', data);
+    } catch (error) {
+      console.error('KioskService: createBukuTamu error:', error.message);
+      return { success: false, message: error.message };
+    }
+  }
+
+  /**
+   * Cek status Pajak Bumi dan Bangunan berdasarkan NOP.
+   */
+  async checkPbb(data) {
+    try {
+      return await this._request('POST', '/api/device/pbb/check', data);
+    } catch (error) {
+      console.error('KioskService: checkPbb error:', error.message);
       return { success: false, message: error.message };
     }
   }

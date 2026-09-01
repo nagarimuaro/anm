@@ -23,6 +23,14 @@ function register(ipc) {
     return await kioskService.cekBansos(params);
   });
 
+  ipc.handle('kiosk:api:createBukuTamu', async (event, data) => {
+    return await kioskService.createBukuTamu(data);
+  });
+
+  ipc.handle('kiosk:api:checkPbb', async (event, data) => {
+    return await kioskService.checkPbb(data);
+  });
+
   ipc.handle('kiosk:api:validateEktpRegistrationCode', async (event, registrationCode) => {
     return await kioskService.validateEktpRegistrationCode(registrationCode);
   });

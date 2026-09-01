@@ -1,6 +1,8 @@
 node_modules/
 dist/
 release/
+.electron-gyp/
+.npm-cache/
 .DS_Store
 .continue/
 *.log
