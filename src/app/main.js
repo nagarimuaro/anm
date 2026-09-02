@@ -145,6 +145,10 @@ app.whenReady().then(async () => {
   deviceController.register(ipcMain, window);
   startDeviceHeartbeat();
 
+  // Preload templates surat ke RAM di background agar siap seketika (0ms)
+  const kioskService = require('./services/kioskService');
+  kioskService.preloadTemplates().catch(() => {});
+
   console.log('✅ ANM ready — Gemini Live mode active');
 
   app.on('activate', () => {

@@ -15,9 +15,60 @@ const EKTP_VALIDATE_ENDPOINT = process.env.EKTP_VALIDATE_ENDPOINT || '/api/devic
 const EKTP_REGISTER_ENDPOINT = process.env.EKTP_REGISTER_ENDPOINT || '/api/device/ektp-registration/register';
 const EKTP_CANCEL_ENDPOINT = process.env.EKTP_CANCEL_ENDPOINT || '/api/device/ektp-registration/cancel';
 
+// Persistent Keep-Alive Agents untuk koneksi berulang yang cepat
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 60000,
+  maxSockets: 20,
+  maxFreeSockets: 10,
+  timeout: 10000,
+});
+
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 60000,
+  maxSockets: 20,
+  maxFreeSockets: 10,
+  timeout: 10000,
+});
+
+const TEMPLATE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 menit
+const WARGA_CACHE_TTL_MS = 3 * 60 * 1000;    // 3 menit per NIK
+
 class KioskService {
   constructor() {
     this._cachedDeviceToken = null;
+    this._cachedTemplates = null;
+    this._templatesCachedAt = 0;
+    this._isPreloadingTemplates = false;
+    this._wargaCache = new Map(); // key: nik -> { data, timestamp }
+  }
+
+  /**
+   * Hapus cache data warga (untuk privasi saat sesi berakhir / kembali ke beranda)
+   */
+  clearWargaCache() {
+    this._wargaCache.clear();
+  }
+
+  /**
+   * Preload daftar template saat aplikasi mulai jalan
+   */
+  async preloadTemplates() {
+    if (this._isPreloadingTemplates) return;
+    this._isPreloadingTemplates = true;
+    try {
+      const res = await this._request('GET', '/api/device/surat/templates');
+      if (res && res.success && Array.isArray(res.data)) {
+        this._cachedTemplates = res.data;
+        this._templatesCachedAt = Date.now();
+        console.log(`[KioskService] ✅ Preloaded ${res.data.length} surat templates into memory.`);
+      }
+    } catch (e) {
+      console.warn('[KioskService] Preload templates failed (will retry on demand):', e.message);
+    } finally {
+      this._isPreloadingTemplates = false;
+    }
   }
 
   /**
@@ -28,55 +79,57 @@ class KioskService {
       const url = new URL(endpoint, BACKEND_URL);
       const isHttps = url.protocol === 'https:';
       const lib = isHttps ? https : http;
+      const agent = isHttps ? httpsAgent : httpAgent;
 
-        const fs = require('fs');
-        const path = require('path');
-        const { app } = require('electron');
-        const userDataPath = app ? app.getPath('userData') : '';
-        const tokenFilePath = path.join(userDataPath, 'device.json');
-        
-        let deviceToken = this._cachedDeviceToken || '';
-        if (!deviceToken) {
-          try {
-            if (fs.existsSync(tokenFilePath)) {
-              const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
-              // Heartbeat/API device harus memakai token device, bukan API key umum.
-              deviceToken = savedData.device_token
-                || savedData.token
-                || '';
-              
-              if (!deviceToken) {
-                console.warn('[KioskAPI] device.json ditemukan tapi tidak ada token field. Keys:', Object.keys(savedData).join(', '));
-              } else {
-                this._cachedDeviceToken = deviceToken;
-              }
-            } else {
-              console.warn('[KioskAPI] device.json tidak ditemukan di:', tokenFilePath);
-            }
-          } catch (e) {
-            console.warn('[KioskAPI] Gagal baca device.json:', e.message);
+      const fs = require('fs');
+      const path = require('path');
+      
+      let deviceToken = this._cachedDeviceToken || '';
+      if (!deviceToken) {
+        try {
+          const { app } = require('electron');
+          const possiblePaths = [];
+          if (app && typeof app.getPath === 'function') {
+            possiblePaths.push(path.join(app.getPath('userData'), 'device.json'));
           }
+          if (process.env.HOME) {
+            possiblePaths.push(path.join(process.env.HOME, 'Library/Application Support/anm/device.json'));
+            possiblePaths.push(path.join(process.env.HOME, 'Library/Application Support/SINTA/device.json'));
+          }
+          possiblePaths.push(path.join(process.cwd(), 'data/device.json'));
+          possiblePaths.push(path.join(process.cwd(), 'device.json'));
+
+          const tokenFilePath = possiblePaths.find(p => fs.existsSync(p));
+          if (tokenFilePath) {
+            const savedData = JSON.parse(fs.readFileSync(tokenFilePath, 'utf-8'));
+            deviceToken = savedData.device_token || savedData.token || '';
+            if (deviceToken) {
+              this._cachedDeviceToken = deviceToken;
+            }
+          }
+        } catch (e) {
+          console.warn('[KioskAPI] Gagal baca device.json:', e.message);
         }
+      }
 
-        const bodyString = body ? JSON.stringify(body) : '';
-        
-        const options = {
-          hostname: url.hostname,
-          port: url.port || (isHttps ? 443 : 80),
-          path: url.pathname + url.search,
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-Device-Key': deviceToken,
-            ...(bodyString && { 'Content-Length': Buffer.byteLength(bodyString) })
-          },
-          timeout: 15000,
-        };
+      const bodyString = body ? JSON.stringify(body) : '';
+      
+      const options = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname + url.search,
+        method,
+        agent,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Device-Key': deviceToken,
+          ...(bodyString && { 'Content-Length': Buffer.byteLength(bodyString) })
+        },
+        timeout: 10000,
+      };
 
-        console.log(`[KioskAPI] ${method} ${url.href} (token: ${deviceToken ? deviceToken.substring(0,8)+'...' : 'NONE'})`);
-
-        const req = lib.request(options, (res) => {
+      const req = lib.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -120,11 +173,27 @@ class KioskService {
   }
 
   /**
-   * Get data warga by NIK
+   * Get data warga by NIK (dengan in-memory cache cepat & proteksi TTL)
    */
   async getWarga(nik) {
+    if (!nik) return { success: false, message: 'NIK tidak boleh kosong.' };
+    const cleanNik = String(nik).trim();
+
+    // Cek in-memory cache
+    const cached = this._wargaCache.get(cleanNik);
+    if (cached && Date.now() - cached.timestamp < WARGA_CACHE_TTL_MS) {
+      return { success: true, data: cached.data, fromCache: true };
+    }
+
     try {
-      return await this._request('POST', '/api/device/surat/check-nik', { nik });
+      const res = await this._request('POST', '/api/device/surat/check-nik', { nik: cleanNik });
+      if (res && res.success && res.data) {
+        this._wargaCache.set(cleanNik, {
+          data: res.data,
+          timestamp: Date.now(),
+        });
+      }
+      return res;
     } catch (error) {
       console.error('KioskService: getWarga error:', error.message);
       return { success: false, message: error.message };
@@ -132,11 +201,30 @@ class KioskService {
   }
 
   /**
-   * Get daftar template surat
+   * Get daftar template surat (Stale-While-Revalidate untuk performa 0ms)
    */
   async getTemplatesSurat() {
+    const isFresh = this._cachedTemplates && (Date.now() - this._templatesCachedAt < TEMPLATE_CACHE_TTL_MS);
+
+    // Jika cache masih segar, langsung kembalikan 0ms
+    if (isFresh) {
+      return { success: true, data: this._cachedTemplates, fromCache: true };
+    }
+
+    // Jika cache sudah agak lama tapi ada data, kembalikan data lama dan fetch baru di background
+    if (this._cachedTemplates && this._cachedTemplates.length > 0) {
+      this.preloadTemplates(); // Background refresh
+      return { success: true, data: this._cachedTemplates, fromCache: true };
+    }
+
+    // Fallback: fetch langsung jika belum ada cache sama sekali
     try {
-      return await this._request('GET', '/api/device/surat/templates');
+      const res = await this._request('GET', '/api/device/surat/templates');
+      if (res && res.success && Array.isArray(res.data)) {
+        this._cachedTemplates = res.data;
+        this._templatesCachedAt = Date.now();
+      }
+      return res;
     } catch (error) {
       return { success: false, message: error.message };
     }
@@ -335,6 +423,7 @@ class KioskService {
    * End kiosk session
    */
   async endSession() {
+    this.clearWargaCache();
     try {
       return await this._request('POST', '/v1/kiosk/session/end');
     } catch (error) {

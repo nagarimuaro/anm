@@ -21,6 +21,9 @@ const normalizeVoicePath = (path) => {
     '/pbb': '/scan-rfid-pajak',
     '/cek-pajak': '/scan-rfid-pajak',
     '/pajak-pbb': '/scan-rfid-pajak',
+    '/pajek': '/scan-rfid-pajak',
+    '/pajek-pbb': '/scan-rfid-pajak',
+    '/pajek-tanah': '/scan-rfid-pajak',
     '/bansos': '/scan-rfid',
     '/cek-bansos': '/scan-rfid',
     '/bantuan-sosial': '/scan-rfid',
@@ -29,14 +32,26 @@ const normalizeVoicePath = (path) => {
     '/registrasi-rfid': '/registrasi-ektp',
     '/daftar-ektp': '/registrasi-ektp',
     '/daftar-ktp': '/registrasi-ektp',
+    '/dapta-ktp': '/registrasi-ektp',
     '/cetak': '/scan-barcode',
     '/cetak-surat': '/scan-barcode',
     '/print-surat': '/scan-barcode',
     '/cetak-ulang': '/scan-barcode',
     '/cetak-ulang-surat': '/scan-barcode',
+    '/mancetak-surek': '/scan-barcode',
     '/resi': '/scan-barcode',
     '/cek-resi': '/scan-barcode',
     '/scan-resi': '/scan-barcode',
+    '/buku-tamu': '/buku-tamu',
+    '/tamu': '/buku-tamu',
+    '/isi-tamu': '/buku-tamu',
+    '/surek': '/input-nik',
+    '/mambuek-surek': '/input-nik',
+    '/buek-surek': '/input-nik',
+    '/verifikasi': '/verifikasi-surat',
+    '/verifikasi-surat': '/verifikasi-surat',
+    '/review-surat': '/verifikasi-surat',
+    '/tinjau-surat': '/verifikasi-surat',
   };
   return aliases[normalized] || path;
 };
@@ -84,7 +99,7 @@ const GlobalVoiceWidget = () => {
     const currentPath = location.pathname;
 
     if (previousPath !== '/' && currentPath === '/') {
-      voice.resetConversation().catch((error) => {
+      voice.resetConversation({ reactivate: false }).catch((error) => {
         console.error('Reset voice conversation failed:', error);
       });
     }

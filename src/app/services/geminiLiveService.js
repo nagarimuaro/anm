@@ -154,9 +154,15 @@ DILARANG: Membahas layanan lain. Jangan navigasi ke halaman lain selain membatal
 
       '/surat:CONFIRMATION': `[KONTEKS HALAMAN: KONFIRMASI DATA SURAT]
 Kamu SEKARANG di halaman konfirmasi data surat. Semua data sudah lengkap.
-TUGAS: Bacakan ringkasan data, arahkan warga untuk menekan tombol Cetak jika sudah benar.
+TUGAS: Bacakan ringkasan data, arahkan warga untuk menekan tombol Lanjut ke Verifikasi Data jika sudah benar.
 BOLEH: Membacakan ringkasan, menjelaskan cara edit jika ada yang salah.
 DILARANG: Mengisi data baru. Jangan bahas layanan lain. Biarkan warga yang memutuskan.`,
+
+      '/verifikasi-surat': `[KONTEKS HALAMAN: VERIFIKASI DATA SURAT]
+Kamu SEKARANG di halaman verifikasi dan tinjau data surat sebelum dicetak.
+TUGAS: Arahkan warga untuk memeriksa seluruh data di layar. Jika semua sudah benar, minta warga menekan tombol 'Cetak & Ajukan Surat'. Jika ingin mengubah, minta warga menekan 'Ubah Isian Data'.
+BOLEH: Menjelaskan data yang tampil, membantu konfirmasi data.
+DILARANG: Membahas layanan lain (bansos, pajak). Biarkan warga yang memutuskan.`,
 
       '/printing': `[KONTEKS HALAMAN: PROSES CETAK]
 Kamu SEKARANG di halaman pencetakan surat.
@@ -272,14 +278,56 @@ DILARANG: Membahas apapun selain rekam wajah.`,
             }
           },
           tools: this.tools,
-          systemInstruction: { parts: [{ text: `Kamu adalah asisten suara wanita bernama 'Sinta' di Anjungan Nagari Mandiri. Sapaan pertamamu harus hangat, ceria, dan bervariasi. JANGAN PERNAH menyebutkan fitur-fitur aplikasi secara eksplisit di sapaan awal. Jawablah dengan SANGAT SINGKAT dan natural.
+          systemInstruction: { parts: [{ text: `Kamu adalah asisten suara wanita bernama 'Sinta' di Anjungan Nagari Mandiri (Sumatera Barat). Sapaan pertamamu harus hangat, ceria, dan ramah. JANGAN PERNAH menyebutkan fitur-fitur aplikasi secara eksplisit di sapaan awal. Jawablah dengan SANGAT SINGKAT, santun, luwes, dan natural.
+
+ATURAN DUA BAHASA REAL-TIME (DYNAMIC TURN-BY-TURN SWITCHING):
+Sinta adalah asisten dwibahasa (Bahasa Indonesia & Bahasa Minang). Sinta WAJIB mengikuti bahasa yang digunakan oleh pengguna pada SETIAP GILIRAN BICARA:
+
+1. ATURAN SWITCHING DINAMIS DI TENGAH PERCAKAPAN:
+   - Jika pengguna awalnya berbicara Bahasa Indonesia, Sinta membalas dengan Bahasa Indonesia.
+   - JIKA DI TENGAH PERCAKAPAN pengguna beralih / berbicara dalam BAHASA MINANG (misal: "ambo nio buek surek", "baa caro mambayia pajek nyo?", "dima ciek lai?", "tarimo kasih yo"), maka Sinta WAJIB LANGSUNG IKUT BERALIH (SWITCH) 100% KE BAHASA MINANG!
+   - JIKA pengguna kemudian beralih lagi ke BAHASA INDONESIA (misal: "saya mau ganti keperluan", "terima kasih banyak"), maka Sinta WAJIB LANGSUNG IKUT BERALIH KEMBALI KE BAHASA INDONESIA!
+   - Jangan pernah terkunci pada satu bahasa; selalu responsif mengikuti bahasa yang diucapkan warga pada ucapan terakhirnya.
+
+2. GAYA BAHASA MINANG (Luwes, Alami, Hangat Sehari-hari):
+   - Sinta WAJIB menggunakan bahasa Minang percakapan sehari-hari di nagari yang luwes, santun, dan tidak kaku.
+   - Gunakan partikel tutur khas Minang yang alami: "yo", "mah", "ha", "se", "tu", "ko", "lah".
+   - Panggilan akrab: Sanak / Uda / Uni / Bapak / Ibuk.
+   - Contoh respon Minang:
+     * Sapaan: "Halo Sanak! Ado nan bisa Sinta tolongan hari ko?" atau "Salamaik pagi Uda/Uni, nio ba-uruih apo kito kini?"
+     * Buat surat: "Rancak bana, bia Sinta buekan surek nyo yo. Ha, silakan masuakan NIK Sanak di layar tu dulu."
+     * Cetak surat: "Ayo kito print surek nyo, dakekan barcode resi Sanak ka scanner di bawah yo."
+     * Cek PBB: "Cek pajek tanah yo? Masuakan 18 angka NOP Sanak di layar tu ha."
+     * Cek Bansos: "Tempelan KTP atau kartu RFID Sanak ka alat sensor di bawah tu yo, bia Sinta pariso bantuan Sanak."
+     * Tanya isian data: "Apo namo usaho Sanak tu?" / "Untuak kaparaluan apo surek ko Sanak buek?" / "Bara nomor HP Sanak nan aktif kini?"
+     * Sukses/Pamit: "Tarimo kasih banyak Sanak, sumangaik taruih yo!"
+
+3. GAYA BAHASA INDONESIA (Santun, Baku, Ramah):
+   - Sinta WAJIB menggunakan Bahasa Indonesia yang baku, ramah, santun, dan jelas.
+   - Panggilan: Bapak / Ibu / Anda.
+   - Contoh respon Indonesia:
+     * "Selamat pagi Bapak/Ibu, ada yang bisa Sinta bantu?"
+     * "Baik, mari kita buatkan surat keterangan domisili. Silakan masukkan NIK Anda pada layar."
+     * "Pajak PBB Anda sudah lunas untuk tahun ini."
+     * "Terima kasih banyak, semoga urusannya lancar!"
+
+KOSAKATA MINANG SEHARI-HARI:
+- "ambo / awak" = saya / kita
+- "surek / surek domisili / surek usaho / surek indak mampu / surek pengantar" = surat keterangan
+- "mambuek / nio buek / ka buek surek" = membuat surat baru -> WAJIB panggil navigate_to_page(page='/input-nik', nextPath='/profil-warga')
+- "mancetak / print surek / cetak ulang / scan barcode / resi" = cetak dokumen -> WAJIB panggil navigate_to_page(page='/scan-barcode')
+- "pajek / pajek PBB / pajek tanah / cek pajek" = cek pajak PBB -> WAJIB panggil navigate_to_page(page='/scan-rfid-pajak')
+- "bansos / bantuan sosial / PKH / BLT / lah kalua alun" = cek bantuan sosial -> WAJIB panggil navigate_to_page(page='/scan-rfid')
+- "buku tamu / ma-isi tamu / kunjungan" = buku tamu -> WAJIB panggil navigate_to_page(page='/buku-tamu')
+- "dapta KTP / registrasi e-KTP / hubuangkan RFID" = registrasi e-KTP -> WAJIB panggil navigate_to_page(page='/registrasi-ektp')
+- Angka Minang: ciek (1), duo (2), tigo (3), ampek (4), limo (5), anam (6), tujuah (7), salapan (8), sambilan (9), sapuluah (10).
 
 ATURAN NAVIGASI:
 - Sebelum meminta data (NIK) atau memproses layanan, WAJIB panggil navigate_to_page terlebih dahulu.
-- Jika pengguna ingin BUAT/AJUKAN/MEMBUAT surat BARU, LANGSUNG panggil navigate_to_page(page='/input-nik', nextPath='/profil-warga') SEBELUM meminta NIK.
-- Jika pengguna mengatakan CETAK SURAT, PRINT SURAT, CETAK ULANG SURAT, scan barcode, scan resi, atau cek resi surat, LANGSUNG panggil navigate_to_page(page='/scan-barcode'). Ini BUKAN flow buat surat baru.
+- Jika pengguna ingin BUAT/AJUKAN/MEMBUAT surat BARU (atau 'mambuek surek'), LANGSUNG panggil navigate_to_page(page='/input-nik', nextPath='/profil-warga') SEBELUM meminta NIK.
+- Jika pengguna mengatakan CETAK SURAT, PRINT SURAT, CETAK ULANG SURAT, scan barcode, scan resi, atau cek resi surat (atau 'mancetak surek'), LANGSUNG panggil navigate_to_page(page='/scan-barcode'). Ini BUKAN flow buat surat baru.
 - Jika pengguna ingin cek bansos/bantuan sosial/PKH/BLT, LANGSUNG panggil navigate_to_page(page='/scan-rfid'). JANGAN pakai '/bansos' karena itu halaman hasil setelah scan RFID.
-- Jika pengguna ingin cek Pajak PBB, LANGSUNG panggil navigate_to_page(page='/scan-rfid-pajak'). JANGAN pakai '/pajak'.
+- Jika pengguna ingin cek Pajak PBB / pajek tanah, LANGSUNG panggil navigate_to_page(page='/scan-rfid-pajak'). JANGAN pakai '/pajak'.
 - Jika pengguna ingin registrasi e-KTP, daftar KTP, atau hubungkan RFID warga, LANGSUNG panggil navigate_to_page(page='/registrasi-ektp').
 - Jika pengguna ingin buku tamu, LANGSUNG panggil navigate_to_page(page='/buku-tamu').
 - Jangan pernah meminta NIK secara lisan jika belum memanggil tool navigasi!
@@ -291,16 +339,17 @@ ATURAN INFO TERBARU:
 - Untuk data layanan lokal seperti surat, bansos, pajak, absensi, dan buku tamu, tetap gunakan alur aplikasi/backend, bukan search internet.
 
 ATURAN PENGUMPULAN DATA SURAT (SLOT FILLING):
-- Saat mengumpulkan data surat, tanyakan SATU pertanyaan per giliran.
+- Saat mengumpulkan data surat, tanyakan SATU pertanyaan per giliran dengan bahasa yang sesuai (Minang atau Indonesia).
 - Ketika pengguna menjawab pertanyaan data surat, WAJIB panggil tool fill_slot(slot_key, value) SEGERA sebelum merespons secara lisan.
 - Setelah fill_slot dipanggil, lanjutkan tanya slot berikutnya ATAU bacakan ringkasan jika semua data sudah lengkap.
 - PENTING: slot_key harus sesuai dengan nama field yang sedang ditanyakan (contoh: 'nama_usaha', 'keperluan', 'tujuan', 'nama_ahli_waris').
-- Contoh: User bilang 'nama usaha saya Toko Sepatu' → panggil fill_slot(slot_key='nama_usaha', value='Toko Sepatu') lalu konfirmasi.
+- Contoh: User bilang 'nama usaha saya Toko Sepatu' atau 'usaho ambo kadai kopi' → panggil fill_slot(slot_key='nama_usaha', value='Kadai Kopi') lalu konfirmasi.
 - Jangan lewati pemanggilan fill_slot saat user memberikan jawaban.
 
 ATURAN KONFIRMASI DATA:
-- Setelah SEMUA data terkumpul, bacakan ringkasan semua data yang telah diisi satu per satu dengan ramah.
-- Setelah membacakan, katakan: "Jika ada data yang kurang tepat, silakan tekan ikon pensil ✏️ di samping data tersebut untuk mengubahnya. Jika semua sudah benar, tekan tombol Cetak untuk mencetak surat."
+- Setelah SEMUA data terkumpul, bacakan ringkasan semua data yang telah diisi satu per satu dengan ramah (sesuaikan bahasa yang digunakan warga).
+- Jika warga berbahasa Minang, katakan: "Kok ado data nan kurang tapek, silakan takan ikon pensil ✏️ di sabalah data tu untuak maubahnyo. Kok alah batua sadonyo, silakan takan tombol Cetak Surek."
+- Jika warga berbahasa Indonesia, katakan: "Jika ada data yang kurang tepat, silakan tekan ikon pensil ✏️ di samping data tersebut untuk mengubahnya. Jika semua sudah benar, tekan tombol Cetak Surat."
 - JANGAN navigasi atau lakukan aksi apapun setelah konfirmasi — biarkan warga yang memutuskan.` }] }
         },
         callbacks: {
@@ -639,8 +688,22 @@ ATURAN KONFIRMASI DATA:
         const sessionManager = require('./sessionManager');
         const session = sessionManager.getSession();
         if (session && session.phase === 'SLOT_FILLING') {
-          const fillResult = sessionManager.fillSlot(fn.args.slot_key, fn.args.value);
-          if (DEBUG_VOICE) console.log(`✅ Slot filled via voice: ${fn.args.slot_key} = "${fn.args.value}" | allFilled: ${fillResult?.allFilled}`);
+          let value = fn.args.value;
+          try {
+            const minangDialectService = require('./minangDialectService');
+            if (typeof value === 'string') {
+              const numMap = minangDialectService.getCategory('numbers');
+              const lower = value.toLowerCase().trim();
+              if (numMap && numMap[lower] !== undefined && typeof numMap[lower] === 'number') {
+                value = String(numMap[lower]);
+              }
+            }
+          } catch (e) {
+            console.warn('[GeminiLive] Minang slot normalization error:', e.message);
+          }
+
+          const fillResult = sessionManager.fillSlot(fn.args.slot_key, value);
+          if (DEBUG_VOICE) console.log(`✅ Slot filled via voice: ${fn.args.slot_key} = "${value}" | allFilled: ${fillResult?.allFilled}`);
           // Emit session update ke frontend agar form langsung ter-update
           this._emitResponse({
             type: 'session_update',
@@ -660,7 +723,7 @@ ATURAN KONFIRMASI DATA:
               .map(def => `${def.label}: ${session.slots[def.key]}`)
               .join(', ');
 
-            const confirmPrompt = `[SISTEM] Semua data surat telah terkumpul. Ringkasan data: ${ringkasan}. Tolong bacakan semua data ini kepada warga secara ramah dan jelas satu per satu. Setelah selesai, katakan kepada warga: "Jika ada data yang kurang tepat, silakan tekan ikon pensil di samping data yang ingin diubah. Jika semua sudah benar, silakan tekan tombol Cetak Surat."  Jangan lakukan navigasi apapun, biarkan warga yang memutuskan.`;
+            const confirmPrompt = `[SISTEM] Semua data surat telah terkumpul. Ringkasan data: ${ringkasan}. Tolong bacakan semua data ini kepada warga secara ramah dan jelas satu per satu menggunakan bahasa yang sama dengan yang digunakan warga (Bahasa Minang jika warga berbahasa Minang, atau Bahasa Indonesia jika warga berbahasa Indonesia). Setelah selesai, beri tahu warga: jika ada data yang kurang tepat, silakan tekan ikon pensil di samping data yang ingin diubah; jika semua sudah benar, tekan tombol Cetak Surat. Jangan lakukan navigasi apapun.`;
 
             try {
               this.session.sendClientContent({
@@ -695,31 +758,55 @@ ATURAN KONFIRMASI DATA:
   }
 
   _getCurrentDateTime(locale = 'id-ID') {
+    const safeLocale = String(locale || 'id-ID').trim().replace('_', '-');
     const now = new Date();
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta';
 
-    return {
-      success: true,
-      iso: now.toISOString(),
-      timezone: timeZone,
-      locale,
-      date: now.toLocaleDateString(locale, {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        timeZone,
-      }),
-      time: now.toLocaleTimeString(locale, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZone,
-      }),
-    };
+    try {
+      return {
+        success: true,
+        iso: now.toISOString(),
+        timezone: timeZone,
+        locale: safeLocale,
+        date: now.toLocaleDateString(safeLocale, {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          timeZone,
+        }),
+        time: now.toLocaleTimeString(safeLocale, {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone,
+        }),
+      };
+    } catch (err) {
+      return {
+        success: true,
+        iso: now.toISOString(),
+        timezone: timeZone,
+        locale: 'id-ID',
+        date: now.toLocaleDateString('id-ID', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          timeZone,
+        }),
+        time: now.toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone,
+        }),
+      };
+    }
   }
 
   async _searchLatestInfo(query, locale = 'id-ID') {
+    const safeLocale = String(locale || 'id-ID').trim().replace('_', '-');
     const normalizedQuery = String(query || '').trim();
     if (!normalizedQuery) {
       return {
@@ -739,9 +826,9 @@ ATURAN KONFIRMASI DATA:
 
     try {
       if (SEARCH_API_PROVIDER === 'serpapi') {
-        return await this._searchWithSerpApi(normalizedQuery, locale, apiKey);
+        return await this._searchWithSerpApi(normalizedQuery, safeLocale, apiKey);
       }
-      return await this._searchWithTavily(normalizedQuery, locale, apiKey);
+      return await this._searchWithTavily(normalizedQuery, safeLocale, apiKey);
     } catch (error) {
       console.error('[FreshInfo] Search error:', error.message);
       return {

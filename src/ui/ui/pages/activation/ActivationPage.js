@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -37,6 +38,15 @@ const ActivationPage = ({ status, setActivationStatus }) => {
 
   return (
     <div className="activation-page">
+      <StatusDialog
+        isOpen={!!error}
+        type="error"
+        title="Aktivasi Kiosk Gagal"
+        message={error}
+        onClose={() => setError('')}
+        actionText="Coba Token Lain"
+      />
+
       <div className="activation-card">
         <div className="activation-icon-wrapper">
           <svg className="activation-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -52,8 +62,6 @@ const ActivationPage = ({ status, setActivationStatus }) => {
             ? 'Peringatan Keamanan: Fingerprint perangkat keras ini tidak cocok dengan data pendaftaran awal. Mesin mungkin dipindahkan secara ilegal.'
             : 'Perangkat Kiosk ini belum terhubung ke sistem. Masukkan Activation Token dari Dashboard Admin.'}
         </p>
-
-        {error && <div className="activation-error">{error}</div>}
 
         <form onSubmit={handleActivate} className="activation-form">
           <input

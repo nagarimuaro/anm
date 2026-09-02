@@ -1,6 +1,6 @@
 {
   "name": "anm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Anjungan Nagari Mandiri",
   "main": "src/app/main.js",
   "scripts": {

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -57,10 +58,28 @@ const InputNikPage = () => {
             await electron.ipcRenderer.invoke('voice:enterManualMode');
           }
 
-          // Selalu navigasi ke profil warga dulu
+          // Cek data warga terlebih dahulu jika tujuan adalah /profil-warga
+          if (nextPath === '/profil-warga' && electron) {
+            const result = await electron.ipcRenderer.invoke('kiosk:api:getWarga', nik);
+            if (result?.success && result?.data) {
+              const data = { ...result.data };
+              if (!data.tempat_lahir && data.tpt_lahir) data.tempat_lahir = data.tpt_lahir;
+              if (!data.tempat_lahir && data.tempatlahir) data.tempat_lahir = data.tempatlahir;
+              if (!data.nik && nik) data.nik = nik;
+
+              navigate('/profil-warga', { state: { nik, warga: data, fromVoice: !!fromVoice } });
+              return;
+            } else {
+              setError(result?.message || 'Data warga dengan NIK tersebut tidak ditemukan di server.');
+              setLoading(false);
+              return;
+            }
+          }
+
+          // Navigasi untuk tujuan selain profil-warga
           navigate(nextPath, { state: { nik, fromVoice: !!fromVoice } });
         } catch (err) {
-          setError('Terjadi kesalahan. Silakan coba lagi.');
+          setError('Terjadi kesalahan saat memeriksa NIK. Silakan coba lagi.');
           setLoading(false);
         }
       }
@@ -117,9 +136,16 @@ const InputNikPage = () => {
           ))}
         </div>
 
-        {error && (
-          <p style={{ color: 'var(--accent-danger)', fontSize: 14, marginTop: 12 }}>{error}</p>
-        )}
+        <StatusDialog
+          isOpen={!!error}
+          type="error"
+          title="Gagal Memproses NIK"
+          message={error}
+          onClose={() => setError('')}
+          actionText="Ketik Ulang"
+          secondaryActionText="Kembali"
+          onSecondaryAction={() => navigate('/')}
+        />
 
         {loading ? (
           <div style={{ marginTop: 24 }}>

@@ -9,6 +9,7 @@ import HomePage from './ui/pages/home/HomePage';
 import InputNikPage from './ui/pages/surat/InputNikPage';
 import ProfilWargaPage from './ui/pages/surat/ProfilWargaPage';
 import SuratPage from './ui/pages/surat/SuratPage';
+import VerifikasiSuratPage from './ui/pages/surat/VerifikasiSuratPage';
 import PrintingPage from './ui/pages/surat/PrintingPage';
 import BansosPage from './ui/pages/bansos/BansosPage';
 import ScanRfidPage from './ui/pages/bansos/ScanRfidPage';
@@ -83,6 +84,7 @@ const App = () => {
                 <Route path="/input-nik" element={<InputNikPage />} />
                 <Route path="/profil-warga" element={<ProfilWargaPage />} />
                 <Route path="/surat" element={<SuratPage />} />
+                <Route path="/verifikasi-surat" element={<VerifikasiSuratPage />} />
                 <Route path="/bansos" element={<BansosPage />} />
                 <Route path="/scan-rfid" element={<ScanRfidPage />} />
                 <Route path="/scan-rfid-pajak" element={<ScanRfidPajakPage />} />

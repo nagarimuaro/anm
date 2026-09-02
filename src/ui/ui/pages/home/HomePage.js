@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SintaPixiCanvas from '../../components/sinta/SintaPixiCanvas';
+import {
+  SuratIcon,
+  BansosIcon,
+  BukuTamuIcon,
+  CetakSuratIcon,
+  PajakPbbIcon,
+  RegistrasiEktpIcon,
+} from '../../components/Icons';
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -81,42 +89,42 @@ const HomePage = () => {
 
   const menuItems = [
     {
-      icon: '📄',
+      icon: <SuratIcon size={42} color="white" />,
       title: 'Buat Surat',
       desc: 'Domisili, Usaha, Tidak Mampu',
       action: () => navigate('/input-nik', { state: { nextPath: '/profil-warga' } }),
       color: '#6366f1',
     },
     {
-      icon: '💰',
+      icon: <BansosIcon size={42} color="white" />,
       title: 'Cek Bansos',
       desc: 'Info bantuan PKH & BLT',
       action: () => navigate('/scan-rfid'),
       color: '#10b981',
     },
     {
-      icon: '📋',
+      icon: <BukuTamuIcon size={42} color="white" />,
       title: 'Buku Tamu',
       desc: 'Catat kunjungan hari ini',
       action: () => navigate('/buku-tamu'),
       color: '#f59e0b',
     },
     {
-      icon: '🖨️',
+      icon: <CetakSuratIcon size={42} color="white" />,
       title: 'Cetak Surat',
       desc: 'Scan barcode/resi',
       action: () => navigate('/scan-barcode'),
       color: '#ec4899',
     },
     {
-      icon: '🏠',
+      icon: <PajakPbbIcon size={42} color="white" />,
       title: 'Pajak PBB',
       desc: 'Cek & Bayar PBB Tahunan',
       action: () => navigate('/scan-rfid-pajak'),
       color: '#8b5cf6',
     },
     {
-      icon: '🪪',
+      icon: <RegistrasiEktpIcon size={42} color="white" />,
       title: 'Registrasi e-KTP',
       desc: 'Hubungkan e-KTP/RFID',
       action: () => navigate('/registrasi-ektp'),

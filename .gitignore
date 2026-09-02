@@ -1,10 +1,36 @@
+# Dependencies
 node_modules/
+
+# Production & Build outputs
 dist/
 release/
-.electron-gyp/
-.npm-cache/
-.DS_Store
-.continue/
-*.log
+build/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
 client_secret_*.json
 backend/google-cloud-key.json
+*.pem
+*.key
+
+# Local Data & SQLite Databases (Runtime)
+/data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs & Temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+.electron-gyp/
+.npm-cache/
+.continue/
+scratch/
+settings_dump.json

@@ -1200,137 +1200,286 @@ textarea.form-input {
   color: var(--accent-info);
 }
 
-/* ── Pegawai Profile Card ── */
-.pegawai-profile {
-  text-align: center;
-  animation: fadeSlideUp 0.5s ease;
-  cursor: pointer;
+/* ── Smart ID Pass (Post-Attendance Modern Screen) ── */
+.smart-id-pass-wrapper {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  animation: fadeSlideUp 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: default;
 }
 
-.pegawai-avatar-large {
-  width: 120px;
-  height: 120px;
+.smart-id-pass-card {
+  background: linear-gradient(150deg, rgba(30, 41, 59, 0.88) 0%, rgba(15, 23, 42, 0.96) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.smart-id-pass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--accent-info, #38BDF8), var(--accent-success, #10B981));
+}
+
+.smart-id-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 14px;
+}
+
+.smart-id-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.smart-id-brand-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.smart-id-org {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+}
+
+.smart-id-suborg {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--accent-info, #38BDF8);
+}
+
+.smart-id-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.smart-id-status-chip.success {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.smart-id-status-chip.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.smart-id-status-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.smart-id-body {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+}
+
+.smart-id-avatar-frame {
+  width: 90px;
+  height: 90px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 16px;
-  font-size: 40px;
-  font-weight: 700;
-  color: white;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
   position: relative;
-  animation: scaleIn 0.4s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.15);
 }
 
-.pegawai-avatar-large img {
+.smart-id-avatar-frame img {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 16px;
   object-fit: cover;
 }
 
-@keyframes scaleIn {
-  from {
-    transform: scale(0.5);
-    opacity: 0;
-  }
-
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+.smart-id-avatar-initials {
+  font-size: 32px;
+  font-weight: 700;
+  color: white;
 }
 
-.avatar-check-badge {
+.smart-id-avatar-badge {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 32px;
-  height: 32px;
+  bottom: -4px;
+  right: -4px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  background: var(--accent-success);
-  color: white;
-  font-size: 16px;
-  font-weight: 700;
+  background: var(--accent-success, #10B981);
+  border: 2px solid #0f172a;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 3px solid var(--bg-primary);
-  animation: scaleIn 0.3s ease 0.3s both;
 }
 
-.pegawai-nama {
+.smart-id-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.smart-id-name {
   font-family: var(--font-heading);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 4px;
+  margin: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.pegawai-jabatan {
-  font-size: 14px;
-  color: var(--accent-light);
-  font-weight: 500;
-  margin-bottom: 16px;
-}
-
-.absensi-time-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 20px;
-  border-radius: 20px;
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.3);
-  color: var(--accent-success);
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 20px;
-  animation: fadeSlideUp 0.4s ease 0.2s both;
-}
-
-.pegawai-detail-card {
-  background: var(--bg-glass);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-lg);
-  padding: 16px 20px;
-  text-align: left;
-  animation: fadeSlideUp 0.4s ease 0.3s both;
-}
-
-.pegawai-detail-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.pegawai-detail-row:last-child {
-  border-bottom: none;
-}
-
-.pegawai-detail-label {
+.smart-id-role-chip {
+  display: inline-block;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-info, #38BDF8);
+}
+
+.smart-id-nip {
+  font-family: 'SF Mono', monospace, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.smart-id-timestamp-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  text-align: left;
+}
+
+.smart-id-timestamp-strip.error {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.smart-id-time-col, .smart-id-method-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.smart-id-time-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
   color: var(--text-muted);
 }
 
-.pegawai-detail-value {
-  font-size: 13px;
+.smart-id-time-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.smart-id-method-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.absensi-success-msg {
+.smart-id-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.smart-id-grid-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.smart-id-grid-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+}
+
+.smart-id-grid-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smart-id-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.smart-id-auto-return {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 16px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent-success);
-  animation: fadeSlideUp 0.4s ease 0.4s both;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.smart-id-return-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-info, #38BDF8);
+  animation: pulse 1.5s infinite;
 }
 
 /* ── Recent Attendance List ── */
@@ -1640,6 +1789,50 @@ textarea.form-input {
   z-index: 5;
   white-space: nowrap;
   animation: fadeSlideUp 0.3s ease;
+}
+
+/* Face guidance pill (Absensi) */
+.face-guidance-pill {
+  margin-top: 14px;
+  padding: 10px 24px;
+  border-radius: 30px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  font-size: 15px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeSlideUp 0.3s ease;
+  min-width: 240px;
+  text-align: center;
+}
+
+.face-guidance-pill.optimal {
+  border: 1.5px solid var(--accent-success, #10b981);
+  color: #34d399;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
+}
+
+.face-guidance-pill.too_far,
+.face-guidance-pill.too_close {
+  border: 1.5px solid var(--accent-warning, #f59e0b);
+  color: #fbbf24;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+.face-guidance-pill.turn_straight {
+  border: 1.5px solid var(--accent-info, #38bdf8);
+  color: #7dd3fc;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+}
+
+.face-guidance-pill.none {
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 /* Capture countdown */
@@ -1957,3 +2150,142 @@ textarea.form-input {
   color: rgba(255, 255, 255, 0.3);
   letter-spacing: 1px;
 }
+
+/* ═══════════════════════════════════════════
+   Status & Error Modal Dialog System
+   ═══════════════════════════════════════════ */
+.status-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 39, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-dialog-box {
+  width: 100%;
+  max-width: 460px;
+  background: linear-gradient(155deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  padding: 32px 28px 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-dialog-box.error::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.status-dialog-box.warning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.status-dialog-box.success::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.status-dialog-icon-circle {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.status-dialog-icon-circle.error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1.5px solid rgba(239, 68, 68, 0.35);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);
+}
+
+.status-dialog-icon-circle.warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1.5px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.2);
+}
+
+.status-dialog-icon-circle.success {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1.5px solid rgba(16, 185, 129, 0.35);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
+}
+
+.status-dialog-title {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+
+.status-dialog-message {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+  max-width: 380px;
+}
+
+.status-dialog-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.status-dialog-btn {
+  flex: 1;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+}
+
+.btn-danger:hover {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+}
+

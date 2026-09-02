@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Keyboard from 'react-simple-keyboard';
 import 'react-simple-keyboard/build/css/index.css';
+import { CheckCircleIcon, InfoIcon } from '../../components/Icons';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -121,7 +123,9 @@ const BukuTamuPage = () => {
     const waktuMasuk = submitResult?.data?.waktu_masuk;
     return (
       <div className="page-enter" style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 64, marginBottom: 16 }}>{isDuplicate ? 'ℹ️' : '✅'}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          {isDuplicate ? <InfoIcon size={64} color="#38bdf8" /> : <CheckCircleIcon size={64} color="#10b981" />}
+        </div>
         <h2 className="page-title">{isDuplicate ? 'Sudah Tercatat Hari Ini' : `Terima Kasih, ${nama}!`}</h2>
         <p className="page-subtitle">{submitResult?.message || 'Kunjungan Anda telah dicatat.'}</p>
         {waktuMasuk && <p className="page-subtitle">Jam kunjungan: {waktuMasuk}</p>}
@@ -243,11 +247,16 @@ const BukuTamuPage = () => {
           </div>
         </div>
 
-        {errorMessage && (
-          <div style={{ color: '#f87171', fontSize: 14, fontWeight: 600 }}>
-            {errorMessage}
-          </div>
-        )}
+        <StatusDialog
+          isOpen={!!errorMessage}
+          type="error"
+          title="Gagal Menyimpan Buku Tamu"
+          message={errorMessage}
+          onClose={() => setErrorMessage('')}
+          actionText="Coba Lagi"
+          secondaryActionText="Kembali ke Beranda"
+          onSecondaryAction={() => navigate('/')}
+        />
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>

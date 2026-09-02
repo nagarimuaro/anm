@@ -9,18 +9,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
+import StatusDialog from '../../components/common/StatusDialog';
 const electron = window.require ? window.require('electron') : null;
 const ProfilWargaPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const nik = location.state?.nik;
+  const initialWarga = location.state?.warga || null;
   const fromVoice = location.state?.fromVoice || false;
-  const [warga, setWarga] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [warga, setWarga] = useState(initialWarga);
+  const [loading, setLoading] = useState(!initialWarga);
   const [error, setError] = useState('');
   const hasSynthesized = useRef(false);
-  // Fetch warga data
+
+  // Fetch warga data hanya jika belum tersedia dari navigasi sebelumnya
   useEffect(() => {
+    if (warga) {
+      setLoading(false);
+      return;
+    }
+
     const fetchWarga = async () => {
       if (!nik) {
         setError('NIK tidak ditemukan. Silakan masukkan NIK terlebih dahulu.');
@@ -32,7 +40,7 @@ const ProfilWargaPage = () => {
           const result = await electron.ipcRenderer.invoke('kiosk:api:getWarga', nik);
           if (result?.success && result?.data) {
             console.log('[ProfilWargaPage] Data dari backend:', result.data);
-            const data = result.data;
+            const data = { ...result.data };
 
             // Normalize keys in case backend uses different field names
             if (!data.tempat_lahir && data.tpt_lahir) data.tempat_lahir = data.tpt_lahir;
@@ -54,7 +62,7 @@ const ProfilWargaPage = () => {
       setLoading(false);
     };
     fetchWarga();
-  }, [nik]);
+  }, [nik, warga]);
   // Ucapkan profil warga saat data tersedia — gunakan speakOnce konsisten
   useEffect(() => {
     if (!warga || !electron || hasSynthesized.current) return;
@@ -86,12 +94,18 @@ const ProfilWargaPage = () => {
   // Error state
   if (error) {
     return (
-      <div className="page-enter" style={{ textAlign: 'center' }}>
-        <h2 className="page-title">⚠️ Terjadi Kesalahan</h2>
-        <p style={{ color: 'var(--accent-danger)', fontSize: 16, margin: '24px 0' }}>{error}</p>
-        <button className="btn btn-primary btn-lg" onClick={() => navigate('/input-nik')}>
-          Coba Lagi
-        </button>
+      <div className="page-enter" style={{ textAlign: 'center', minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <StatusDialog
+          isOpen={true}
+          type="error"
+          title="Data Warga Tidak Ditemukan"
+          message={error}
+          onClose={() => { setError(''); navigate('/input-nik'); }}
+          actionText="Masukkan Ulang NIK"
+          onAction={() => { setError(''); navigate('/input-nik'); }}
+          secondaryActionText="Kembali ke Beranda"
+          onSecondaryAction={() => { setError(''); navigate('/'); }}
+        />
       </div>
     );
   }

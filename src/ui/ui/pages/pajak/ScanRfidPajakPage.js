@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
+import { CheckCircleIcon, AlertTriangleIcon, InfoIcon } from '../../components/Icons';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -142,7 +144,15 @@ const ScanRfidPajakPage = () => {
         textAlign: 'left'
       }}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>{isPaid ? '✅' : isOverdue ? '⚠️' : '📄'}</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            {isPaid ? (
+              <CheckCircleIcon size={48} color="#10b981" />
+            ) : isOverdue ? (
+              <AlertTriangleIcon size={48} color="#f87171" />
+            ) : (
+              <InfoIcon size={48} color="#f59e0b" />
+            )}
+          </div>
           <h3 style={{
             fontSize: 20,
             fontWeight: 600,
@@ -255,11 +265,16 @@ const ScanRfidPajakPage = () => {
           </div>
         ) : (
           <>
-            {errorMessage && (
-              <div style={{ color: '#f87171', fontSize: 14, fontWeight: 600, marginTop: 20 }}>
-                {errorMessage}
-              </div>
-            )}
+            <StatusDialog
+              isOpen={!!errorMessage}
+              type="error"
+              title="Pemeriksaan PBB Tidak Ditemukan"
+              message={errorMessage}
+              onClose={() => setErrorMessage('')}
+              actionText="Periksa Ulang"
+              secondaryActionText="Kembali ke Beranda"
+              onSecondaryAction={() => navigate('/')}
+            />
 
             {renderPbbResult()}
 

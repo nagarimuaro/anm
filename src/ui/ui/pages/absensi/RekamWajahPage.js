@@ -9,6 +9,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as faceapi from '@vladmandic/face-api';
+import {
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  InfoIcon,
+  ShieldCheckIcon,
+  ScanFaceIcon,
+  UserIcon,
+  ArrowLeftIcon
+} from '../../components/Icons';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -181,7 +191,7 @@ const RekamWajahPage = () => {
 
     const detection = await faceapi.detectSingleFace(
       videoRef.current, 
-      new faceapi.TinyFaceDetectorOptions()
+      new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.70 })
     ).withFaceLandmarks().withFaceDescriptor();
 
     if (!detection) {
@@ -348,8 +358,8 @@ const RekamWajahPage = () => {
     if (!selectedPegawai || photos.length < REQUIRED_PHOTOS || descriptors.length < REQUIRED_PHOTOS) return;
     setEnrollError('');
 
-    // Pick the best descriptor (middle sample)
-    const bestDescriptor = Array.from(descriptors[1] || descriptors[0]);
+    // Gunakan master descriptor dari foto 1 (wajah lurus frontal - paling akurat dan presisi)
+    const bestDescriptor = Array.from(descriptors[0] || descriptors[1] || []);
 
     try {
       if (electron) {
@@ -412,42 +422,52 @@ const RekamWajahPage = () => {
   return (
     <div className="page-enter rekam-wajah-page">
       {/* Header */}
+      {/* Header */}
       <div className="absensi-header">
         <h2 className="page-title">
-          {step === 'token' && '🔐 Verifikasi Admin'}
-          {step === 'select' && '📸 Rekam Wajah Pegawai'}
-          {step === 'camera' && '📷 Ambil Foto Wajah'}
-          {step === 'review' && '✅ Verifikasi Foto'}
-          {step === 'done' && '🎉 Pendaftaran Berhasil'}
+          {step === 'token' && 'Otorisasi Admin'}
+          {step === 'select' && 'Pendaftaran Wajah Pegawai'}
+          {step === 'camera' && 'Pengambilan Sampel Wajah'}
+          {step === 'review' && 'Verifikasi Sampel Foto'}
+          {step === 'done' && 'Pendaftaran Biometrik Selesai'}
         </h2>
         <p className="page-subtitle" style={{ marginBottom: 0 }}>
-          {step === 'token' && 'Masukkan Token Pendaftaran yang diberikan Admin'}
-          {step === 'camera' && (!modelsLoaded ? 'Memuat model AI...' : `Halo ${selectedPegawai?.nama?.split(' ')[0] || 'Pegawai'}, silakan arahkan wajah Anda ke kamera (${Math.min(photos.length + 1, REQUIRED_PHOTOS)}/${REQUIRED_PHOTOS})`)}
-          {step === 'review' && 'Pastikan semua foto terlihat jelas'}
-          {step === 'done' && 'Wajah pegawai berhasil didaftarkan ke sistem'}
+          {step === 'token' && 'Masukkan Token Pendaftaran yang diterbitkan dari Admin Panel'}
+          {step === 'camera' && (!modelsLoaded ? 'Memuat modul biometrik...' : `Halo ${selectedPegawai?.nama?.split(' ')[0] || 'Pegawai'}, silakan posisikan wajah Anda ke kamera (${Math.min(photos.length + 1, REQUIRED_PHOTOS)}/${REQUIRED_PHOTOS})`)}
+          {step === 'review' && 'Pastikan seluruh sampel foto tampak jelas dan fokus'}
+          {step === 'done' && 'Data biometrik pegawai telah berhasil didaftarkan'}
         </p>
       </div>
 
       {/* Step: Token Admin */}
       {step === 'token' && (
-        <div style={{ maxWidth: 400, margin: '24px auto', textAlign: 'center' }}>
-          <div className="glass-card" style={{ padding: '32px 28px' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🔑</div>
+        <div style={{ maxWidth: 420, margin: '24px auto', textAlign: 'center' }}>
+          <div className="glass-card" style={{ padding: '36px 30px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ marginBottom: 16 }}>
+              <ShieldCheckIcon size={48} color="var(--accent-info, #38BDF8)" />
+            </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 20 }}>
-              Token ini diperoleh dari Admin Panel SINTANAGARI (6 atau 14 digit).
+              Masukkan 6 atau 14 digit token verifikasi dari sistem admin SINTANAGARI.
             </p>
             <input
               type="text"
-              placeholder="Masukkan token (contoh: 482917)"
+              placeholder="Contoh: 482917"
               value={adminToken}
               onChange={e => { setAdminToken(e.target.value); setTokenError(''); }}
               style={{
-                width: '100%', padding: '14px', borderRadius: 10,
-                background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.15)',
+                width: '100%', padding: '14px', borderRadius: 12,
+                background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.18)',
                 color: 'white', fontSize: 20, textAlign: 'center', letterSpacing: 4, marginBottom: 8,
               }}
             />
-            {tokenError && <p style={{ color: 'var(--accent-danger)', fontSize: 13, marginBottom: 12 }}>{tokenError}</p>}
+            <StatusDialog
+              isOpen={!!tokenError}
+              type="error"
+              title="Token Admin Tidak Valid"
+              message={tokenError}
+              onClose={() => setTokenError('')}
+              actionText="Ketik Ulang Token"
+            />
             <button
               className="btn btn-primary btn-block"
               style={{ width: '100%', marginTop: 12 }}
@@ -466,41 +486,34 @@ const RekamWajahPage = () => {
                     setDescriptors([]);
                     setStep('camera');
                   } else {
-                    setTokenError(res?.message || 'Kode tidak valid atau sudah kedaluwarsa.');
+                    setTokenError(res?.message || 'Token tidak valid atau sudah kedaluwarsa.');
                   }
                 } catch (e) {
-                  setTokenError('Gagal memverifikasi token. Periksa koneksi.');
+                  setTokenError('Gagal memverifikasi token. Periksa koneksi jaringan.');
                 } finally {
                   setTokenChecking(false);
                 }
               }}
             >
-              {tokenChecking ? 'Memeriksa...' : 'Lanjut →'}
+              {tokenChecking ? 'Memeriksa Otorisasi...' : 'Lanjutkan Verifikasi'}
             </button>
           </div>
-          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => navigate('/absensi')}>
-            ← Kembali ke Absensi
+          <button className="btn btn-secondary" style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 8 }} onClick={() => navigate('/absensi')}>
+            <ArrowLeftIcon size={16} color="currentColor" />
+            Kembali ke Absensi
           </button>
         </div>
       )}
-
-      {modelError && (
-        <div style={{ background: 'var(--accent-danger)', color: 'white', padding: '12px 20px', borderRadius: 8, marginTop: 16 }}>
-          {modelError}
-        </div>
-      )}
-
-
 
       {/* Step: Camera — AUTO CAPTURE via Face-API */}
       {step === 'camera' && (
         <div className="rekam-camera-container">
           {/* Selected pegawai mini card */}
-          <div className="rekam-selected-mini">
-            <span style={{ fontSize: 14 }}>📸</span>
-            <span>{selectedPegawai?.nama}</span>
+          <div className="rekam-selected-mini" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', background: 'rgba(15,23,42,0.85)', borderRadius: 20, border: '1px solid rgba(255,255,255,0.15)', marginBottom: 12 }}>
+            <UserIcon size={16} color="var(--accent-info, #38BDF8)" />
+            <span style={{ fontWeight: 600 }}>{selectedPegawai?.nama}</span>
             <span style={{ color: 'var(--text-muted)' }}>•</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{selectedPegawai?.jabatan}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{selectedPegawai?.jabatan}</span>
           </div>
 
           <div className={`camera-viewport ${faceDetected ? 'face-active' : ''}`}>
@@ -540,9 +553,9 @@ const RekamWajahPage = () => {
             <div className={`camera-status-badge ${faceDetected ? 'detected' : ''}`}>
               <span className="camera-status-dot" />
               {!cameraReady ? 'Membuka kamera...' :
-               !modelsLoaded ? 'Memuat model AI...' :
-               autoCapturing ? '📸 Merekam fitur wajah...' :
-               faceDetected ? '✓ Wajah Terdeteksi' : 'Menunggu wajah...'}
+               !modelsLoaded ? 'Memuat modul biometrik...' :
+               autoCapturing ? 'Merekam sampel wajah...' :
+               faceDetected ? 'Wajah Terdeteksi' : 'Menunggu wajah...'}
             </div>
           </div>
 
@@ -559,17 +572,18 @@ const RekamWajahPage = () => {
             ))}
           </div>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', marginTop: 4 }}>
-            {!modelsLoaded ? 'Mohon tunggu, memuat Face-API...' :
-             photos.length >= REQUIRED_PHOTOS ? '✅ Memproses fitur wajah!' :
-             autoCapturing ? '⏳ Siap-siap, jangan bergerak...' :
-             faceDetected ? '🟢 Wajah terdeteksi — otomatis merekam' :
-             '👤 Posisikan wajah di dalam guide'}
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', marginTop: 8 }}>
+            {!modelsLoaded ? 'Mohon tunggu, memuat modul pengenalan...' :
+             photos.length >= REQUIRED_PHOTOS ? 'Pengambilan sampel foto selesai' :
+             autoCapturing ? 'Siap-siap, pertahankan posisi Anda...' :
+             faceDetected ? 'Wajah terdeteksi — otomatis mengambil foto' :
+             'Posisikan wajah Anda di dalam lingkaran panduan'}
           </p>
 
           {cameraError && (
-            <div className="camera-error">
-              <p>⚠️ {cameraError}</p>
+            <div className="camera-error" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <AlertTriangleIcon size={24} color="#EF4444" />
+              <p style={{ margin: 0 }}>{cameraError}</p>
               <button className="btn btn-secondary" onClick={startCamera} style={{ marginTop: 8, fontSize: 13 }}>Coba Lagi</button>
             </div>
           )}
@@ -588,28 +602,44 @@ const RekamWajahPage = () => {
             ))}
           </div>
 
-          <div className="rekam-review-info">
-            <div style={{ fontSize: 36, marginBottom: 8 }}>✅</div>
+          <div className="rekam-review-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <div style={{ marginBottom: 8 }}>
+              <CheckCircleIcon size={40} color="#10B981" />
+            </div>
             <h3 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
               {selectedPegawai?.nama}
             </h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-              {photos.length} pose telah direkam dengan fitur AI
+              {photos.length} sampel foto berhasil diambil secara optimal
             </p>
           </div>
 
-          {enrollError && (
-            <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '10px 16px', marginTop: 12, color: '#f87171', fontSize: 14 }}>
-              ⚠️ {enrollError}
-            </div>
-          )}
+      <StatusDialog
+        isOpen={!!modelError}
+        type="error"
+        title="Modul AI Gagal Dimuat"
+        message={modelError}
+        onClose={() => setModelError(null)}
+        actionText="Tutup"
+      />
+
+      <StatusDialog
+        isOpen={!!enrollError}
+        type="error"
+        title="Pendaftaran Biometrik Gagal"
+        message={enrollError}
+        onClose={() => setEnrollError('')}
+        actionText="Ulangi Pengambilan"
+        onAction={() => { setEnrollError(''); setPhotos([]); setDescriptors([]); setStep('camera'); }}
+      />
 
           <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-            <button className="btn btn-primary btn-lg" onClick={handleSave}>
-              ✓ Kirim & Daftarkan
+            <button className="btn btn-primary btn-lg" onClick={handleSave} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircleIcon size={18} color="white" />
+              Kirim & Daftarkan Biometrik
             </button>
             <button className="btn btn-secondary" onClick={() => { setPhotos([]); setDescriptors([]); setStep('camera'); }}>
-              ↻ Ulangi Rekaman
+              Ulangi Pengambilan Foto
             </button>
           </div>
         </div>
@@ -617,14 +647,16 @@ const RekamWajahPage = () => {
 
       {/* Step: Done */}
       {step === 'done' && (
-        <div className="rekam-done-container">
-          <div className="rekam-done-icon">🎉</div>
+        <div className="rekam-done-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+          <div className="rekam-done-icon" style={{ marginBottom: 12 }}>
+            <CheckCircleIcon size={56} color="#10B981" />
+          </div>
           <h3 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
-            Pendaftaran Berhasil!
+            Pendaftaran Biometrik Berhasil
           </h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 24, maxWidth: 400, lineHeight: 1.6 }}>
-            Fitur wajah <strong style={{ color: 'var(--accent-light)' }}>{selectedPegawai?.nama}</strong> telah
-            berhasil didaftarkan ke sistem absensi.
+          <p style={{ color: 'var(--text-secondary)', fontSize: 15, marginBottom: 24, maxWidth: 440, lineHeight: 1.6 }}>
+            Data wajah <strong style={{ color: 'var(--accent-light, #38BDF8)' }}>{selectedPegawai?.nama}</strong> telah
+            berhasil disimpan dan dapat langsung digunakan untuk presensi mandiri.
           </p>
 
           <div className="rekam-done-photos">
@@ -636,11 +668,13 @@ const RekamWajahPage = () => {
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <button className="btn btn-primary" onClick={handleReset}>
-              📸 Rekam Pegawai Lain
+            <button className="btn btn-primary" onClick={handleReset} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ScanFaceIcon size={18} color="white" />
+              Daftarkan Pegawai Lain
             </button>
-            <button className="btn btn-secondary" onClick={() => navigate('/absensi')}>
-              ← Ke Absensi
+            <button className="btn btn-secondary" onClick={() => navigate('/absensi')} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ArrowLeftIcon size={16} color="currentColor" />
+              Ke Halaman Absensi
             </button>
           </div>
         </div>
@@ -650,10 +684,11 @@ const RekamWajahPage = () => {
       {step === 'select' && (
         <button
           className="btn btn-secondary"
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 24, display: 'inline-flex', alignItems: 'center', gap: 8 }}
           onClick={() => setStep('token')}
         >
-          ← Ubah Token
+          <ArrowLeftIcon size={16} color="currentColor" />
+          Ubah Token
         </button>
       )}
     </div>

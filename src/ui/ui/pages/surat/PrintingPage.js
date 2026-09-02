@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import StatusDialog from '../../components/common/StatusDialog';
+import { CheckCircleIcon, ClockIcon, AlertTriangleIcon, CetakSuratIcon } from '../../components/Icons';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -239,20 +241,36 @@ const PrintingPage = () => {
   if (showManualResi) {
     return (
       <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 40px', gap: 24, width: '100%' }}>
+        <StatusDialog
+          isOpen={!!manualResiError}
+          type="error"
+          title="Resi Tidak Ditemukan"
+          message={manualResiError}
+          onClose={() => setManualResiError('')}
+          actionText="Coba Lagi"
+          secondaryActionText="Kembali"
+          onSecondaryAction={() => navigate('/scan-barcode')}
+        />
 
         <div style={{ textAlign: 'center' }}>
           <h2 className="page-title" style={{ fontSize: 'clamp(28px, 3.5vw, 48px)', fontWeight: 300, marginBottom: 8 }}>
-            🔢 Input Kode Resi Manual
+            Input Kode Resi Manual
           </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 22, margin: 0 }}>
-            Masukkan nomor resi dari struk cetak yang sudah diterima
+          <p style={{ color: 'var(--text-secondary)', fontSize: 20, margin: 0 }}>
+            Masukkan nomor resi dari struk cetak yang sudah Anda terima
           </p>
         </div>
 
         {/* Kartu Hasil Pencarian */}
         {documentResult && (
           <div className="glass-card" style={{ background: 'rgba(30,41,88,0.9)', padding: '32px', width: '100%', maxWidth: 900, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontSize: 48, textAlign: 'center' }}>{documentResult.is_signed ? '✅' : '⏳'}</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+              {documentResult.is_signed ? (
+                <CheckCircleIcon size={48} color="#10B981" />
+              ) : (
+                <ClockIcon size={48} color="#F59E0B" />
+              )}
+            </div>
             <h3 style={{ color: 'white', fontSize: 24, textAlign: 'center', margin: 0 }}>Dokumen Ditemukan</h3>
             <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 16, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div><span style={{ color: 'var(--text-secondary)', fontSize: 16 }}>Kode Resi</span><br /><strong style={{ fontSize: 20, color: '#818cf8', fontFamily: 'monospace' }}>{documentResult.code}</strong></div>
@@ -261,7 +279,7 @@ const PrintingPage = () => {
               <div>
                 <span style={{ color: 'var(--text-secondary)', fontSize: 16 }}>Status</span><br />
                 <strong style={{ fontSize: 20, color: documentResult.is_signed ? '#10b981' : documentResult.status_raw === 'wali_review' ? '#a78bfa' : '#f87171' }}>
-                  {documentResult.is_signed ? '✅ Sudah Ditandatangani (Siap Cetak)' : documentResult.status_raw === 'wali_review' ? '⏳ Menunggu Tanda Tangan Wali Nagari' : '❌ Belum Diproses'}
+                  {documentResult.is_signed ? 'Sudah Ditandatangani (Siap Cetak)' : documentResult.status_raw === 'wali_review' ? 'Menunggu Tanda Tangan Wali Nagari' : 'Belum Diproses'}
                 </strong>
               </div>
             </div>
@@ -269,9 +287,10 @@ const PrintingPage = () => {
               <button
                 className="btn"
                 onClick={handlePrintFoundDoc}
-                style={{ fontSize: 24, padding: '20px', borderRadius: 16, background: '#10b981', border: 'none', color: 'white', fontWeight: 700 }}
+                style={{ fontSize: 22, padding: '18px', borderRadius: 16, background: '#10b981', border: 'none', color: 'white', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}
               >
-                🖨️ Cetak Dokumen Sekarang
+                <CetakSuratIcon size={24} color="white" />
+                Cetak Dokumen Sekarang
               </button>
             ) : (
               <p style={{ color: '#f87171', textAlign: 'center', fontSize: 18, margin: 0 }}>
@@ -299,10 +318,6 @@ const PrintingPage = () => {
             }}>
               {manualResiInput || <span style={{ color: 'rgba(255,255,255,0.2)', fontWeight: 300, fontSize: 26 }}>Ketik kode resi di sini...</span>}
             </div>
-
-            {manualResiError && (
-              <p style={{ color: '#f87171', fontSize: 20, textAlign: 'center', margin: 0, fontWeight: 600 }}>{manualResiError}</p>
-            )}
 
             <CustomKeyboard
               value={manualResiInput}
@@ -348,21 +363,24 @@ const PrintingPage = () => {
   return (
     <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', minHeight: '100%', padding: '32px 40px', gap: 24 }}>
 
-      <h2 className="page-title" style={{ marginBottom: 0, fontSize: 'clamp(28px, 3.5vw, 52px)', fontWeight: 300, letterSpacing: '1px', textAlign: 'center' }}>
-        {printStatus === 'downloading' && '⏬ Mengunduh Dokumen...'}
-        {printStatus === 'printing' && (isSignedDoc ? '🖨️ Mencetak Dokumen...' : '🖨️ Mencetak Struk Resi...')}
-        {printStatus === 'done' && (isSignedDoc ? '✅ Dokumen Berhasil Dicetak!' : '✅ Pengajuan Berhasil')}
-        {printStatus === 'error' && '❌ Gagal Mencetak'}
-        {printStatus === 'idle' && '⏳ Mempersiapkan...'}
-      </h2>
+      <StatusDialog
+        isOpen={!!printError}
+        type="error"
+        title="Gagal Mencetak Dokumen"
+        message={printError}
+        onClose={() => setPrintError('')}
+        actionText="Tutup"
+        secondaryActionText="Kembali ke Beranda"
+        onSecondaryAction={() => navigate('/')}
+      />
 
-      {printError && (
-        <div className="glass-card" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', padding: '32px 40px', color: '#f87171', fontSize: 22, maxWidth: 800, textAlign: 'center', width: '100%' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <p style={{ margin: '0 0 24px' }}>{printError}</p>
-          <button className="btn btn-secondary" style={{ fontSize: 22, padding: '16px 40px', borderRadius: 14 }} onClick={() => navigate('/')}>Kembali ke Beranda</button>
-        </div>
-      )}
+      <h2 className="page-title" style={{ marginBottom: 0, fontSize: 'clamp(28px, 3.5vw, 52px)', fontWeight: 300, letterSpacing: '1px', textAlign: 'center' }}>
+        {printStatus === 'downloading' && 'Mengunduh Dokumen...'}
+        {printStatus === 'printing' && (isSignedDoc ? 'Mencetak Dokumen Sah...' : 'Mencetak Struk Resi...')}
+        {printStatus === 'done' && (isSignedDoc ? 'Dokumen Berhasil Dicetak' : 'Pengajuan Berhasil Diproses')}
+        {printStatus === 'error' && 'Kendala Pencetakan'}
+        {printStatus === 'idle' && 'Mempersiapkan...'}
+      </h2>
 
       {printStatus !== 'error' && printStatus !== 'done' && (
         <div className="glass-card" style={{ background: 'rgba(30,41,88,0.6)', padding: '40px 60px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 32, width: '100%', maxWidth: 700 }}>
@@ -394,7 +412,7 @@ const PrintingPage = () => {
 
       {printStatus === 'done' && isSignedDoc && (
         <div className="glass-card" style={{ background: 'rgba(30,41,88,0.6)', padding: '48px 60px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, maxWidth: 700, width: '100%' }}>
-          <div style={{ fontSize: 72 }}>✅</div>
+          <CheckCircleIcon size={72} color="#10B981" />
           <p style={{ color: 'var(--text-secondary)', fontSize: 24, maxWidth: 500, margin: 0 }}>Dokumen sah telah dicetak. Silakan ambil dari printer.</p>
           <p style={{ color: 'var(--text-muted)', fontSize: 18, margin: 0 }}>Halaman akan kembali ke beranda secara otomatis...</p>
           <button className="btn btn-primary" style={{ fontSize: 22, padding: '16px 48px', borderRadius: 16, marginTop: 8 }} onClick={() => navigate('/')}>Kembali ke Beranda</button>
@@ -404,7 +422,7 @@ const PrintingPage = () => {
       {isDone && !isSignedDoc && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(10,14,39,0.97)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '40px', backdropFilter: 'blur(20px)' }}>
           <div className="glass-card" style={{ background: 'rgba(30,41,88,0.7)', padding: '48px 64px', borderRadius: 40, textAlign: 'center', maxWidth: '900px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 26, margin: 0 }}>Pengajuan Berhasil! 🎉</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 26, margin: 0 }}>Pengajuan Berhasil Dicatat</p>
             <h2 style={{ color: 'white', fontSize: 'clamp(24px, 3vw, 40px)', fontWeight: 300, margin: 0 }}>Simpan / Foto Nomor Resi Anda:</h2>
             <div style={{ background: 'rgba(16,185,129,0.1)', border: '2px dashed rgba(16,185,129,0.4)', padding: '20px 48px', borderRadius: 24, display: 'inline-block' }}>
               <div style={{ fontSize: 'clamp(36px, 5vw, 64px)', fontWeight: 900, color: '#10b981', letterSpacing: '6px', textShadow: '0 0 20px rgba(16, 185, 129, 0.3)', wordBreak: 'break-all' }}>{resi}</div>
@@ -429,9 +447,10 @@ const PrintingPage = () => {
           <button
             className="btn"
             onClick={() => setShowManualResi(true)}
-            style={{ fontSize: 20, padding: '16px 40px', borderRadius: 16, background: 'rgba(99,102,241,0.15)', border: '2px solid rgba(99,102,241,0.4)', color: '#818cf8', fontWeight: 600 }}
+            style={{ fontSize: 20, padding: '16px 40px', borderRadius: 16, background: 'rgba(99,102,241,0.15)', border: '2px solid rgba(99,102,241,0.4)', color: '#818cf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 10 }}
           >
-            📄 Cetak Surat (Input Resi Manual)
+            <CetakSuratIcon size={20} color="currentColor" />
+            Cetak Surat (Input Resi Manual)
           </button>
         </div>
       )}

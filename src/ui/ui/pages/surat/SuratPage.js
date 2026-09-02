@@ -697,38 +697,32 @@ const SuratPage = () => {
             <div style={{ marginTop: 'clamp(24px, 3vw, 48px)', display: 'flex', justifyContent: 'center', gap: 24 }}>
               <button
                 className="btn btn-primary btn-lg"
-                style={{ padding: 'clamp(14px, 1.6vw, 24px) clamp(32px, 4vw, 64px)', fontSize: 'clamp(16px, 1.8vw, 28px)', borderRadius: 20, boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)' }}
-                onClick={async () => {
-                  if (electron) {
-                    try {
-                      // JANGAN panggil enterManualMode di sini!
-                      // Gemini harus tetap aktif agar bisa bicara farewell di PrintingPage.
-                      // enterManualMode akan dipanggil otomatis oleh PrintingPage setelah 12 detik.
-
-                      // Temukan template ID
-                      const templateObj = templates.find(t => t.nama === selectedSurat);
-
-                      const submitData = {
-                        nik: nik,
-                        template_id: templateObj ? templateObj.id : null,
-                        keperluan: sessionData.slots?.keperluan || 'Keperluan tidak dicantumkan',
-                        custom_data: sessionData.slots
-                      };
-
-                      const result = await electron.ipcRenderer.invoke('kiosk:api:buatSurat', submitData);
-
-                      if (result && (result.status === 'success' || result.success)) {
-                        navigate('/printing', { state: { result: { ...sessionData, receipt: result }, warga, fromVoice } });
-                      } else {
-                        alert('Gagal memproses surat: ' + (result?.pesan || result?.message || 'Terjadi kesalahan'));
-                      }
-                    } catch (e) {
-                      alert('Kesalahan jaringan: ' + e.message);
+                style={{
+                  padding: 'clamp(14px, 1.6vw, 24px) clamp(32px, 4vw, 64px)',
+                  fontSize: 'clamp(18px, 2vw, 28px)',
+                  borderRadius: 20,
+                  boxShadow: '0 8px 32px rgba(99, 102, 241, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}
+                onClick={() => {
+                  const templateObj = templates.find(t => t.nama === selectedSurat);
+                  navigate('/verifikasi-surat', {
+                    state: {
+                      nik,
+                      warga,
+                      selectedSurat,
+                      templateObj,
+                      slots: sessionData?.slots || {},
+                      sessionData,
+                      fromVoice
                     }
-                  }
+                  });
                 }}
               >
-                Cetak & Ajukan Surat
+                <span>🔍 Lanjut ke Verifikasi Data</span>
+                <span>→</span>
               </button>
             </div>
           )}

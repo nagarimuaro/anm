@@ -8,6 +8,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as faceapi from '@vladmandic/face-api';
+import {
+  CheckCircleIcon,
+  AlertTriangleIcon,
+  InfoIcon,
+  EyeIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ShieldCheckIcon,
+  ClockIcon,
+  ScanFaceIcon,
+  UserIcon,
+  LandmarkIcon
+} from '../../components/Icons';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -62,6 +76,11 @@ const AbsensiPage = () => {
   
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceBox, setFaceBox] = useState(null);
+  const [faceGuidance, setFaceGuidance] = useState({
+    type: 'none',
+    text: 'Arahkan wajah ke kamera',
+    color: 'rgba(255,255,255,0.7)'
+  });
 
   // Liveness State
   const [challenge, setChallenge] = useState(null);
@@ -78,6 +97,8 @@ const AbsensiPage = () => {
   const isMatchingFaceRef = useRef(false);
 
   const matchedPegawaiRef = useRef(null);
+  const consecutiveMatchRef = useRef({ pegawaiId: null, count: 0, matchedData: null, lastTime: 0 });
+  const lastVoiceGuidanceRef = useRef({ type: null, firstSeen: 0, lastSpoken: 0 });
   
   // Liveness tracking refs
   const eyesClosedRef = useRef(false);
@@ -293,7 +314,7 @@ const AbsensiPage = () => {
       try {
         const detection = await faceapi.detectSingleFace(
           videoRef.current,
-          new faceapi.TinyFaceDetectorOptions()
+          new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.65 })
         ).withFaceLandmarks().withFaceDescriptor();
 
         if (detection) {
@@ -301,6 +322,7 @@ const AbsensiPage = () => {
           const videoW = videoRef.current.videoWidth;
           const videoH = videoRef.current.videoHeight;
           const box = detection.detection.box;
+          const pose = detection.landmarks ? getHeadPose(detection.landmarks) : 'center';
           
           setFaceBox({
             x: (box.x / videoW) * 100,
@@ -310,29 +332,123 @@ const AbsensiPage = () => {
           });
           setFaceDetected(true);
 
+          // Panduan posisi wajah (Visual & Suara)
+          let currentGuidance = { type: 'optimal', text: 'Posisi optimal — Memverifikasi...', color: '#10b981' };
+          let voiceText = '';
+
+          if (box.width < 110 || box.height < 110) {
+            currentGuidance = { type: 'too_far', text: 'Silakan mendekat ke kamera', color: '#f59e0b' };
+            voiceText = 'Silakan mendekat sedikit ke kamera ya.';
+          } else if (box.width > 340 || box.height > 340) {
+            currentGuidance = { type: 'too_close', text: 'Silakan mundur sedikit', color: '#f59e0b' };
+            voiceText = 'Silakan mundur sedikit dari kamera ya.';
+          } else if (pose !== 'center') {
+            currentGuidance = { type: 'turn_straight', text: 'Arahkan pandangan lurus ke kamera', color: '#38bdf8' };
+            voiceText = 'Silakan lihat lurus ke kamera ya.';
+          }
+
+          setFaceGuidance(currentGuidance);
+
+          // Ucapkan panduan suara jika dalam kondisi yang sama > 3.5 detik (rate-limited max sekali tiap 9 detik)
+          if (mode === 'camera' && electron && currentGuidance.type !== 'optimal') {
+            const now = Date.now();
+            const tracking = lastVoiceGuidanceRef.current;
+            if (tracking.type === currentGuidance.type) {
+              if (now - tracking.firstSeen > 3500 && now - tracking.lastSpoken > 9000) {
+                tracking.lastSpoken = now;
+                electron.ipcRenderer.invoke('voice:speakOnce', voiceText).catch(() => {});
+              }
+            } else {
+              lastVoiceGuidanceRef.current = {
+                type: currentGuidance.type,
+                firstSeen: now,
+                lastSpoken: tracking.lastSpoken || 0,
+              };
+            }
+          } else if (currentGuidance.type === 'optimal') {
+            lastVoiceGuidanceRef.current.type = 'optimal';
+          }
+
           if (mode === 'camera' && dbLoaded && electron && !isMatchingFaceRef.current) {
+            // Quality Gate: Pastikan wajah cukup dekat dan menghadap lurus ke kamera
+            const isFaceBigEnough = box.width >= 110 && box.height >= 110;
+            const isFrontal = pose === 'center';
+
+            if (!isFaceBigEnough || !isFrontal) {
+              // Wajah terlalu jauh atau menoleh — tunda matching hingga posisi tepat
+              detectLoopRef.current = requestAnimationFrame(() => setTimeout(detectFaces, 150));
+              return;
+            }
+
             isMatchingFaceRef.current = true;
             
             // Call API via IPC Main Process
             electron.ipcRenderer.invoke('kiosk:api:hrFaceMatch', Array.from(detection.descriptor))
               .then(res => {
                 if (res && res.success && res.data && res.matched) {
-                   const matchedP = res.data;
-                   if (matchedP && (matchedP.id || matchedP.pegawai_id)) {
-                     // Normalize ID to id if it's pegawai_id
-                     if (!matchedP.id) matchedP.id = matchedP.pegawai_id;
-                     startLivenessChallenge(matchedP);
-                     // No need to reset isMatchingFaceRef immediately as mode changes
-                   } else {
-                     setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
-                   }
+                  const matchedP = res.data;
+                  const targetId = matchedP.id || matchedP.pegawai_id;
+
+                  // Filter Threshold Ketat (jarak maksimal 0.52 atau confidence minimal 0.48)
+                  const distance = res.data.distance !== undefined ? res.data.distance : (res.distance !== undefined ? res.distance : null);
+                  const confidence = res.data.confidence !== undefined ? res.data.confidence : (res.confidence !== undefined ? res.confidence : null);
+
+                  if (distance !== null && distance > 0.52) {
+                    console.warn(`[FaceMatch] Ditolak: Jarak Euclidean ${distance} melebihi batas 0.52`);
+                    setTimeout(() => { isMatchingFaceRef.current = false; }, 300);
+                    return;
+                  }
+                  if (confidence !== null && confidence < 0.48) {
+                    console.warn(`[FaceMatch] Ditolak: Confidence ${confidence} di bawah batas 0.48`);
+                    setTimeout(() => { isMatchingFaceRef.current = false; }, 300);
+                    return;
+                  }
+
+                  if (targetId) {
+                    if (!matchedP.id) matchedP.id = targetId;
+
+                    // Multi-Frame Verification (Wajib cocok 2 frame berturut-turut untuk kandidat yang sama)
+                    const tracking = consecutiveMatchRef.current;
+                    const isSameCandidate = tracking.pegawaiId === targetId;
+                    const isRecent = (Date.now() - tracking.lastTime) < 2500;
+
+                    if (isSameCandidate && isRecent) {
+                      tracking.count += 1;
+                      tracking.lastTime = Date.now();
+                      tracking.matchedData = matchedP;
+
+                      if (tracking.count >= 2) {
+                        // Terverifikasi multi-frame secara konsisten!
+                        consecutiveMatchRef.current = { pegawaiId: null, count: 0, matchedData: null, lastTime: 0 };
+                        startLivenessChallenge(matchedP);
+                        return;
+                      }
+                    } else {
+                      // Frame pertama cocok -> simpan ke tracking buffer
+                      consecutiveMatchRef.current = {
+                        pegawaiId: targetId,
+                        count: 1,
+                        matchedData: matchedP,
+                        lastTime: Date.now()
+                      };
+                    }
+
+                    // Lanjut frame verifikasi berikutnya secara cepat
+                    setTimeout(() => { isMatchingFaceRef.current = false; }, 200);
+                  } else {
+                    setTimeout(() => { isMatchingFaceRef.current = false; }, 300);
+                  }
                 } else {
-                   setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
+                  // Tidak cocok -> jika buffer lama, reset
+                  if (Date.now() - consecutiveMatchRef.current.lastTime > 1500) {
+                    consecutiveMatchRef.current = { pegawaiId: null, count: 0, matchedData: null, lastTime: 0 };
+                  }
+                  setTimeout(() => { isMatchingFaceRef.current = false; }, 300);
                 }
               })
               .catch(err => {
                 console.error("hrFaceMatch error:", err);
-                setTimeout(() => { isMatchingFaceRef.current = false; }, 1000);
+                setTimeout(() => { isMatchingFaceRef.current = false; }, 400);
               });
           } 
           
@@ -378,6 +494,11 @@ const AbsensiPage = () => {
         } else {
           setFaceDetected(false);
           setFaceBox(null);
+          setFaceGuidance({
+            type: 'none',
+            text: 'Posisikan wajah Anda di dalam bingkai',
+            color: 'rgba(255,255,255,0.7)'
+          });
         }
       } catch (err) { }
 
@@ -405,9 +526,16 @@ const AbsensiPage = () => {
     setIdentifyProgress(0);
     setFaceDetected(false);
     setFaceBox(null);
+    setFaceGuidance({
+      type: 'none',
+      text: 'Arahkan wajah ke kamera',
+      color: 'rgba(255,255,255,0.7)'
+    });
     matchedPegawaiRef.current = null;
     eyesClosedRef.current = false;
     isMatchingFaceRef.current = false;
+    consecutiveMatchRef.current = { pegawaiId: null, count: 0, matchedData: null, lastTime: 0 };
+    lastVoiceGuidanceRef.current = { type: null, firstSeen: 0, lastSpoken: 0 };
   }, []);
 
   useEffect(() => {
@@ -421,12 +549,12 @@ const AbsensiPage = () => {
 
 
   const getSubTitleText = () => {
-    if (!modelsLoaded) return '⏳ Memuat Face-API...';
-    if (!dbLoaded) return '⚠️ Belum ada data wajah direkam.';
-    if (mode === 'camera') return faceDetected ? '🟢 Wajah terdeteksi — memverifikasi...' : 'Arahkan wajah ke kamera untuk absensi';
-    if (mode === 'liveness') return '🛡️ Deteksi Keamanan (Liveness)';
-    if (mode === 'identifying') return '⏳ Menyelesaikan absensi...';
-    if (mode === 'identified') return absensiError ? '⚠️ Absensi tidak dapat diproses' : '✅ Absensi berhasil dicatat';
+    if (!modelsLoaded) return 'Memuat modul biometrik...';
+    if (!dbLoaded) return 'Data biometrik pegawai belum terdaftar';
+    if (mode === 'camera') return faceDetected ? 'Memproses pemindaian biometrik...' : 'Posisikan wajah Anda pada area pemindai';
+    if (mode === 'liveness') return 'Verifikasi Keaslian Wajah (Liveness)';
+    if (mode === 'identifying') return 'Mencocokkan identitas pegawai...';
+    if (mode === 'identified') return absensiError ? 'Presensi Belum Dapat Diproses' : 'Presensi Kehadiran Berhasil Dicatat';
     return '';
   };
 
@@ -434,35 +562,50 @@ const AbsensiPage = () => {
     if (mode !== 'liveness') return null;
     
     let text = "";
-    let icon = "";
-    if (challenge === 'blink') { text = 'Kedipkan Mata Anda'; icon = '😌'; }
-    else if (challenge === 'turn_left') { text = 'Menoleh ke Kiri'; icon = '⬅️'; }
-    else if (challenge === 'turn_right') { text = 'Menoleh ke Kanan'; icon = '➡️'; }
+    let iconElement = null;
+    if (challenge === 'blink') {
+      text = 'Kedipkan Mata Anda';
+      iconElement = <EyeIcon size={22} color="#38BDF8" />;
+    } else if (challenge === 'turn_left') {
+      text = 'Menoleh Sedikit ke Kiri';
+      iconElement = <ArrowLeftIcon size={22} color="#38BDF8" />;
+    } else if (challenge === 'turn_right') {
+      text = 'Menoleh Sedikit ke Kanan';
+      iconElement = <ArrowRightIcon size={22} color="#38BDF8" />;
+    }
 
     return (
-      // Dirender DI LUAR camera-viewport agar tidak menghalangi wajah
-      // Posisi ini dikontrol dari parent (absensi-scan-area)
       <div className="liveness-challenge-box" style={{
-        marginTop: 12,
-        background: livenessStatus === 'passed' ? 'rgba(16,185,129,0.15)' : 'rgba(14,165,233,0.12)',
-        color: 'white', padding: '10px 24px', borderRadius: '12px',
-        textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', minWidth: 200,
-        border: livenessStatus === 'passed' ? '1.5px solid var(--accent-success)' : '1.5px solid rgba(56,189,248,0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        marginTop: 14,
+        background: livenessStatus === 'passed' ? 'rgba(16,185,129,0.12)' : 'rgba(15,23,42,0.85)',
+        backdropFilter: 'blur(12px)',
+        color: 'white', padding: '12px 26px', borderRadius: '16px',
+        textAlign: 'center', boxShadow: '0 8px 30px rgba(0,0,0,0.35)', minWidth: 260,
+        border: livenessStatus === 'passed' ? '1.5px solid var(--accent-success, #10B981)' : '1.5px solid rgba(56,189,248,0.4)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
       }}>
         {livenessStatus === 'passed' ? (
           <>
-            <span style={{ fontSize: 20 }}>✅</span>
-            <span style={{ fontWeight: 600, fontSize: 15 }}>Verifikasi Berhasil</span>
+            <CheckCircleIcon size={24} color="#10B981" />
+            <span style={{ fontWeight: 600, fontSize: 15, color: '#34d399' }}>Verifikasi Biometrik Berhasil</span>
           </>
         ) : (
           <>
-            <span style={{ fontSize: 20 }}>{icon}</span>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Tantangan Keamanan: <span style={{ color: 'var(--accent-info)' }}>{text}</span></span>
+            {iconElement}
+            <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
+              Verifikasi Keamanan: <span style={{ color: 'var(--accent-info, #38BDF8)' }}>{text}</span>
+            </span>
           </>
         )}
       </div>
     );
+  };
+
+  const renderGuidanceIcon = () => {
+    if (faceGuidance.type === 'optimal') return <CheckCircleIcon size={18} color="#10B981" />;
+    if (faceGuidance.type === 'turn_straight') return <ScanFaceIcon size={18} color="#38BDF8" />;
+    if (faceGuidance.type === 'too_far' || faceGuidance.type === 'too_close') return <ScanFaceIcon size={18} color="#F59E0B" />;
+    return <ScanFaceIcon size={18} color="rgba(255,255,255,0.6)" />;
   };
 
   return (
@@ -491,7 +634,7 @@ const AbsensiPage = () => {
                     
                     {/* Main Face Oval */}
                     <ellipse cx="100" cy="150" rx="65" ry="90" fill="none" strokeWidth="3.5" className="face-guide-path" style={{ 
-                      stroke: mode === 'liveness' ? 'var(--accent-warning)' : faceDetected ? 'var(--accent-success)' : undefined 
+                      stroke: mode === 'liveness' ? 'var(--accent-warning)' : faceDetected ? faceGuidance.color : undefined 
                     }} />
                   </svg>
                 </div>
@@ -504,13 +647,21 @@ const AbsensiPage = () => {
                 )}
 
                 <div className={`camera-status-badge ${faceDetected ? 'detected' : ''}`}>
-                  <span className="camera-status-dot" style={{ background: mode === 'liveness' ? 'var(--accent-warning)' : '' }} />
+                  <span className="camera-status-dot" style={{ background: mode === 'liveness' ? 'var(--accent-warning)' : faceGuidance.color }} />
                   {!cameraReady ? 'Kamera mati' :
                    mode === 'liveness' ? 'Verifikasi Keamanan...' :
                    mode === 'identifying' ? 'Mempersiapkan data...' :
-                   faceDetected ? 'Wajah Terdeteksi' : 'Menunggu Wajah'}
+                   faceDetected ? faceGuidance.text : 'Menunggu Wajah'}
                 </div>
               </div>
+
+              {/* Panduan Posisi Wajah Interaktif (Mendekat / Menjauh / Lurus) */}
+              {mode === 'camera' && (
+                <div className={`face-guidance-pill ${faceGuidance.type}`}>
+                  {renderGuidanceIcon()}
+                  <span>{faceGuidance.text}</span>
+                </div>
+              )}
 
               {/* Instruksi liveness di BAWAH kamera, tidak menghalangi wajah */}
               {renderLivenessInstruction()}
@@ -526,58 +677,114 @@ const AbsensiPage = () => {
                 </div>
               )}
 
-              {cameraError && (
-                <div className="camera-error">
-                  <p>⚠️ {cameraError}</p>
-                  <button className="btn btn-secondary" onClick={startCamera} style={{ marginTop: 12, fontSize: 13 }}>Coba Lagi</button>
-                </div>
-              )}
+              <StatusDialog
+                isOpen={!!cameraError}
+                type="error"
+                title="Kamera Tidak Terhubung"
+                message={cameraError}
+                onClose={() => setCameraError(null)}
+                actionText="Coba Lagi"
+                onAction={() => { setCameraError(null); startCamera(); }}
+                secondaryActionText="Kembali ke Beranda"
+                onSecondaryAction={() => { stopCamera(); navigate('/'); }}
+              />
             </div>
           )}
 
           {mode === 'identified' && pegawai && (
-            <div className="pegawai-profile" onClick={handleReset}>
-              <div className="pegawai-avatar-large" style={{ background: `linear-gradient(135deg, ${getAvatarColor(pegawai.nama)[0]}, ${getAvatarColor(pegawai.nama)[1]})`, overflow: 'hidden' }}>
-                {JSON.parse(localStorage.getItem('anm_face_db') || '{}')[pegawai.id]?.avatarUrl ? (
-                  <img src={JSON.parse(localStorage.getItem('anm_face_db') || '{}')[pegawai.id].avatarUrl} alt={pegawai.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <span>{getInitials(pegawai.nama)}</span>
-                )}
-                <div className="avatar-check-badge">✓</div>
-              </div>
-
-              <h3 className="pegawai-nama">{pegawai.nama}</h3>
-              <div className="pegawai-jabatan">{pegawai.jabatan}</div>
-
-              <div className="absensi-time-badge" style={absensiError ? { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', color: '#fca5a5' } : {}}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-                {absensiError ? `⚠️ ${absensiError}` : `Masuk: ${absensiTime}`}
-              </div>
-
-              <div className="pegawai-detail-card">
-                <div className="pegawai-detail-row">
-                  <span className="pegawai-detail-label">NIP</span>
-                  <span className="pegawai-detail-value">{pegawai.nip}</span>
+            <div className="smart-id-pass-wrapper" onClick={handleReset}>
+              <div className="smart-id-pass-card">
+                {/* Top Brand Header */}
+                <div className="smart-id-header">
+                  <div className="smart-id-brand">
+                    <LandmarkIcon size={22} color="var(--accent-info, #38BDF8)" />
+                    <div className="smart-id-brand-text">
+                      <span className="smart-id-org">PEMERINTAH NAGARI MANDIRI</span>
+                      <span className="smart-id-suborg">KARTU PRESENSI BIOMETRIK</span>
+                    </div>
+                  </div>
+                  <div className={`smart-id-status-chip ${absensiError ? 'error' : 'success'}`}>
+                    <span className="smart-id-status-dot" />
+                    <span>{absensiError ? 'GAGAL' : (pegawai.sudah_checkout ? 'PULANG' : 'MASUK')}</span>
+                  </div>
                 </div>
-                <div className="pegawai-detail-row">
-                  <span className="pegawai-detail-label">Pangkat</span>
-                  <span className="pegawai-detail-value">{pegawai.pangkat}</span>
-                </div>
-                <div className="pegawai-detail-row">
-                  <span className="pegawai-detail-label">Unit Kerja</span>
-                  <span className="pegawai-detail-value">{pegawai.unit}</span>
-                </div>
-              </div>
 
-              <div className="absensi-success-msg">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-success)" strokeWidth="2.5">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-                Wajah diverifikasi
+                {/* Main Employee Hero Profile */}
+                <div className="smart-id-body">
+                  <div className="smart-id-avatar-frame" style={{ background: `linear-gradient(135deg, ${getAvatarColor(pegawai.nama)[0]}, ${getAvatarColor(pegawai.nama)[1]})` }}>
+                    {JSON.parse(localStorage.getItem('anm_face_db') || '{}')[pegawai.id]?.avatarUrl ? (
+                      <img src={JSON.parse(localStorage.getItem('anm_face_db') || '{}')[pegawai.id].avatarUrl} alt={pegawai.nama} />
+                    ) : (
+                      <span className="smart-id-avatar-initials">{getInitials(pegawai.nama)}</span>
+                    )}
+                    {!absensiError && (
+                      <div className="smart-id-avatar-badge">
+                        <CheckCircleIcon size={14} color="white" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="smart-id-info">
+                    <h3 className="smart-id-name">{pegawai.nama}</h3>
+                    <div className="smart-id-role-chip">{pegawai.jabatan}</div>
+                    <div className="smart-id-nip">NIP: {pegawai.nip || '-'}</div>
+                  </div>
+                </div>
+
+                {/* Verification Time & Status Strip */}
+                <div className={`smart-id-timestamp-strip ${absensiError ? 'error' : 'success'}`}>
+                  <div className="smart-id-time-col">
+                    <span className="smart-id-time-label">WAKTU PRESENSI</span>
+                    <div className="smart-id-time-value">
+                      <ClockIcon size={17} color="currentColor" />
+                      <span>{absensiTime || 'Tercatat'} WIB</span>
+                    </div>
+                  </div>
+                  <div className="smart-id-method-col">
+                    <span className="smart-id-time-label">STATUS VERIFIKASI</span>
+                    <div className="smart-id-method-value">
+                      {absensiError ? (
+                        <span style={{ color: '#F87171', fontSize: 13 }}>{absensiError}</span>
+                      ) : (
+                        <>
+                          <ShieldCheckIcon size={16} color="#10B981" />
+                          <span style={{ color: '#34D399', fontSize: 13 }}>Biometrik Sah</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metadata Grid */}
+                <div className="smart-id-grid">
+                  <div className="smart-id-grid-item">
+                    <span className="smart-id-grid-label">PANGKAT / GOLONGAN</span>
+                    <span className="smart-id-grid-val">{pegawai.pangkat || '-'}</span>
+                  </div>
+                  <div className="smart-id-grid-item">
+                    <span className="smart-id-grid-label">UNIT KERJA</span>
+                    <span className="smart-id-grid-val">{pegawai.unit || 'Kantor Wali Nagari'}</span>
+                  </div>
+                </div>
+
+                {/* Footer Return Notice */}
+                <div className="smart-id-footer">
+                  <div className="smart-id-auto-return">
+                    <span className="smart-id-return-dot" />
+                    <span>Otomatis kembali ke beranda...</span>
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ padding: '6px 16px', fontSize: 13 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReset();
+                      navigate('/');
+                    }}
+                  >
+                    Selesai
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -588,19 +795,18 @@ const AbsensiPage = () => {
         <button
           className="btn btn-secondary"
           onClick={() => { stopCamera(); navigate('/rekam-wajah'); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-            <circle cx="12" cy="13" r="4" />
-          </svg>
+          <ScanFaceIcon size={18} color="currentColor" />
           Pendaftaran Wajah
         </button>
         <button
           className="btn btn-secondary"
           onClick={() => { stopCamera(); navigate('/'); }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
         >
-          ← Kembali ke Beranda
+          <ArrowLeftIcon size={16} color="currentColor" />
+          Kembali ke Beranda
         </button>
       </div>
     </div>

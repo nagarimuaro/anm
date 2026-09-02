@@ -413,9 +413,31 @@ export default function useVoiceSession(disableMic = false) {
     setIsProcessing(false);
   }, []);
 
-  const resetConversation = useCallback(async () => {
+  const resetConversation = useCallback(async (options = {}) => {
+    const shouldReactivate = Boolean(options?.reactivate);
     resetLocalConversationState();
     stopPlayback({ notifyAudioEnded: false });
+
+    if (!shouldReactivate) {
+      setIsActive(false);
+      setIsConnecting(false);
+      setIsListening(false);
+      setIsProcessing(false);
+      closeMic();
+      if (lipsyncRafRef.current) {
+        cancelAnimationFrame(lipsyncRafRef.current);
+        lipsyncRafRef.current = null;
+      }
+      if (playbackCtxRef.current && playbackCtxRef.current.state !== 'closed') {
+        playbackCtxRef.current.close().catch(() => {});
+        playbackCtxRef.current = null;
+      }
+      if (electron) {
+        return await electron.ipcRenderer.invoke('voice:resetConversation', { reactivate: false });
+      }
+      return { success: true };
+    }
+
     setIsActive(true);
     setIsConnecting(true);
     setIsListening(false);
@@ -452,7 +474,7 @@ export default function useVoiceSession(disableMic = false) {
       setAiResponse('Gagal memulai ulang sesi AI.');
       return { success: false, error: error.message };
     }
-  }, [disableMic, initPlaybackContext, openMic, resetLocalConversationState, stopPlayback]);
+  }, [closeMic, disableMic, initPlaybackContext, openMic, resetLocalConversationState, stopPlayback]);
 
   const toggle = useCallback(async () => {
     if (isActive) {
@@ -580,7 +602,7 @@ export default function useVoiceSession(disableMic = false) {
         // Kirim prompt sambutan ke Gemini agar Sinta langsung menyapa warga
         if (electron) {
           electron.ipcRenderer.invoke('voice:sendToGemini',
-            '[SISTEM] Kamu baru saja terhubung. Berikan sambutan yang hangat, singkat, dan ceria kepada warga. Perkenalkan dirimu sebagai Sinta. Tanyakan dengan ramah: ada yang bisa Sinta bantu hari ini?'
+            '[SISTEM] Kamu baru saja terhubung. Berikan sapaan pembuka yang hangat, santun, ceria, dan tidak kaku (misal: "Halo Sanak! Salamaik datang di Anjungan Nagari Mandiri. Ado nan bisa Sinta tolongan?"). INGAT: Jika warga berbicara Bahasa Minang, balaslah dengan Bahasa Minang yang luwes dan alami (ota nagari sehari-hari); jika warga berbicara Bahasa Indonesia, balaslah dengan Bahasa Indonesia yang santun dan ramah.'
           ).catch(() => { });
         }
       } else if (data.state === 'LISTENING' || data.state === 'BUFFERING') {

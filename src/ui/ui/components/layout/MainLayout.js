@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { LandmarkIcon, SettingsIcon } from '../Icons';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -89,7 +90,7 @@ const MainLayout = ({ children }) => {
             <img src={logoUrl} alt="Logo Instansi" style={{ height: `${logoSize}px`, objectFit: 'contain', transition: 'height 0.2s' }} />
           ) : (
             <div style={{ height: `${logoSize}px`, width: `${logoSize}px`, background: 'rgba(255,255,255,0.2)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
-              <span style={{ fontSize: `${Math.max(20, logoSize / 2.5)}px` }}>🏛️</span>
+              <LandmarkIcon size={Math.max(24, Math.round(logoSize / 2.2))} color="white" />
             </div>
           )}
         </div>
@@ -117,7 +118,6 @@ const MainLayout = ({ children }) => {
               background: 'transparent', 
               border: 'none', 
               cursor: 'pointer', 
-              fontSize: '24px',
               padding: '4px',
               display: 'flex',
               alignItems: 'center',
@@ -128,7 +128,7 @@ const MainLayout = ({ children }) => {
             onMouseOver={(e) => e.currentTarget.style.opacity = 1}
             onMouseOut={(e) => e.currentTarget.style.opacity = 0.8}
           >
-            ⚙️
+            <SettingsIcon size={24} color="white" />
           </button>
         </div>
       </header>

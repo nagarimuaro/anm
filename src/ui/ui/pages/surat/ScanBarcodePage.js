@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
+import StatusDialog from '../../components/common/StatusDialog';
+import { CheckCircleIcon, ClockIcon, AlertTriangleIcon } from '../../components/Icons';
 
 const electron = window.require ? window.require('electron') : null;
 
@@ -12,6 +14,7 @@ const ScanBarcodePage = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanAttempt, setScanAttempt] = useState(1);
   const [documentData, setDocumentData] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const inputRef = useRef(null);
   const fallbackTimer = useRef(null);
@@ -124,6 +127,7 @@ const ScanBarcodePage = () => {
         }
       }
     } catch (err) {
+      setErrorMessage(err.message || 'Kode resi tidak ditemukan di server.');
       setStatusText(`Gagal: ${err.message}`);
       if (electron) {
         electron.ipcRenderer.invoke('voice:speakOnce', 'Kode resi tidak ditemukan atau terjadi kesalahan. Silakan coba lagi.').catch(() => {});
@@ -142,6 +146,16 @@ const ScanBarcodePage = () => {
 
   return (
     <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', padding: '24px 40px', gap: 24, textAlign: 'center' }}>
+      <StatusDialog
+        isOpen={!!errorMessage}
+        type="error"
+        title="Resi Tidak Ditemukan"
+        message={errorMessage}
+        onClose={() => setErrorMessage('')}
+        actionText="Pindai Ulang"
+        secondaryActionText="Kembali ke Beranda"
+        onSecondaryAction={() => navigate('/')}
+      />
 
       {/* Judul */}
       <div>
@@ -156,8 +170,12 @@ const ScanBarcodePage = () => {
         {documentData ? (
           <div style={{ width: '100%', animation: 'scaleIn 0.5s ease' }}>
             <div className="glass-card" style={{ padding: '40px', textAlign: 'center', background: 'rgba(30,41,88,0.6)' }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px' }}>
-                {documentData.status_signed ? '✅' : '⏳'}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+                {documentData.status_signed ? (
+                  <CheckCircleIcon size={52} color="#10B981" />
+                ) : (
+                  <ClockIcon size={52} color="#F59E0B" />
+                )}
               </div>
               <h3 style={{ fontSize: '24px', color: 'var(--text-primary)', marginBottom: '16px' }}>Detail Dokumen</h3>
               

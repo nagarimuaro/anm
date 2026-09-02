@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import speakAfterPageReady from '../../utils/speakAfterPageReady';
+import StatusDialog from '../../components/common/StatusDialog';
 
 const electron = window.require ? window.require('electron') : null;
 const CODE_MAX_LENGTH = 12;
@@ -216,9 +217,16 @@ const RegisterEktpPage = () => {
               style={{ letterSpacing: 6, maxWidth: 420 }}
             />
 
-            {error && (
-              <p style={{ color: 'var(--accent-danger)', fontSize: 14, marginTop: 12 }}>{error}</p>
-            )}
+            <StatusDialog
+              isOpen={!!error}
+              type="error"
+              title="Registrasi e-KTP Gagal"
+              message={error}
+              onClose={() => setError('')}
+              actionText="Coba Lagi"
+              secondaryActionText="Kembali ke Beranda"
+              onSecondaryAction={() => navigate('/')}
+            />
 
             {loading ? (
               <div style={{ marginTop: 28 }}>
@@ -322,7 +330,14 @@ const RegisterEktpPage = () => {
             />
 
             {loading && <p style={{ color: 'var(--accent-info)', fontWeight: 700 }}>Mendaftarkan kartu...</p>}
-            {error && <p style={{ color: 'var(--accent-danger)', fontSize: 14 }}>{error}</p>}
+            <StatusDialog
+              isOpen={!!error}
+              type="error"
+              title="Pendaftaran Kartu Gagal"
+              message={error}
+              onClose={() => setError('')}
+              actionText="Tempelkan Ulang"
+            />
           </div>
         )}
 

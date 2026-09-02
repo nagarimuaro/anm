@@ -326,6 +326,21 @@ function register(ipc, mainWindow) {
     sessionManager.setTemplateId(templateId);
     return { success: true };
   });
+
+  // ── MINANG DIALECT NLP HANDLERS (minangNLP) ──
+  const minangDialectService = require('../services/minangDialectService');
+
+  ipc.handle('voice:minang:normalize', (event, text) => {
+    return minangDialectService.normalizeText(text);
+  });
+
+  ipc.handle('voice:minang:translate', (event, word) => {
+    return minangDialectService.translateWord(word);
+  });
+
+  ipc.handle('voice:minang:getCategories', () => {
+    return minangDialectService.categories;
+  });
 }
 
 module.exports = { register };
